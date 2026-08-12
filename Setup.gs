@@ -169,15 +169,13 @@ function getLogoDataUrl_() {
   }
 }
 
-/** Fast branding for page load — skips Drive logo fetch */
+/** Fast branding for page load — no Drive I/O and no huge logo payload */
 function getBrandingLight_() {
   var slogan = getScriptProps_().getProperty(PROP.ORG_SLOGAN) || ORG_SLOGAN_DEFAULT;
-  var logo = '';
-  try { logo = getDefaultLogoDataUrl_(); } catch (e) {}
   return {
     orgName: ORG_NAME,
     slogan: slogan,
-    logoDataUrl: logo,
+    logoDataUrl: '',
     logoFileId: ''
   };
 }

@@ -209,5 +209,77 @@
       var INITIAL = <?!= initial ?>;
     </script>
     <?!= include('JavaScript'); ?>
+    <script>
+      // Fallback: if main script failed to bind, still wire login buttons
+      (function () {
+        function byId(id) { return document.getElementById(id); }
+        function msg(text, ok) {
+          var el = byId('loginMsg');
+          if (!el) return;
+          el.hidden = !text;
+          el.textContent = text || '';
+          el.className = 'msg ' + (ok ? 'ok' : 'err');
+        }
+        function call(fn) {
+          var args = Array.prototype.slice.call(arguments, 1);
+          return new Promise(function (resolve, reject) {
+            if (!google || !google.script || !google.script.run) {
+              reject(new Error('Apps Script bridge missing. Open the script.google.com /exec link, not GitHub Pages.'));
+              return;
+            }
+            google.script.run
+              .withSuccessHandler(function (res) {
+                if (res && res.ok === false) reject(new Error(res.error || 'Request failed'));
+                else resolve(res && res.data !== undefined ? res.data : res);
+              })
+              .withFailureHandler(reject)[fn].apply(null, args);
+          });
+        }
+        if (window.__nazLoginBound) return;
+        var send = byId('btnSendLoginCode');
+        var verify = byId('btnVerifyLoginCode');
+        var clearBtn = byId('btnClearSession');
+        if (send && !send.getAttribute('data-bound')) {
+          send.setAttribute('data-bound', '1');
+          send.addEventListener('click', function () {
+            var email = (byId('loginEmail').value || '').trim();
+            msg('Sending code…', true);
+            call('apiRequestLoginCode', email)
+              .then(function () { msg('Code sent to ' + email + '. Check inbox (and spam).', true); })
+              .catch(function (err) { msg(err.message || String(err), false); });
+          });
+        }
+        if (verify && !verify.getAttribute('data-bound')) {
+          verify.setAttribute('data-bound', '1');
+          verify.addEventListener('click', function () {
+            var email = (byId('loginEmail').value || '').trim();
+            var code = (byId('loginCode').value || '').trim();
+            msg('Verifying…', true);
+            call('apiVerifyLoginCode', email, code)
+              .then(function () {
+                msg('Signed in. Loading…', true);
+                if (typeof window.applyBootstrap === 'function') {
+                  return call('apiGetBootstrap').then(function (data) {
+                    if (typeof window.hideAuthBanner === 'function') window.hideAuthBanner();
+                    window.applyBootstrap(data);
+                  });
+                }
+                try { sessionStorage.setItem('naz_just_logged_in', '1'); } catch (e) {}
+                window.location.reload();
+              })
+              .catch(function (err) { msg(err.message || String(err), false); });
+          });
+        }
+        if (clearBtn && !clearBtn.getAttribute('data-bound')) {
+          clearBtn.setAttribute('data-bound', '1');
+          clearBtn.addEventListener('click', function () {
+            msg('Clearing…', true);
+            call('apiResetStaleLinks')
+              .then(function (res) { msg((res && res.message) || 'Cleared. Request a new login code.', true); })
+              .catch(function (err) { msg(err.message || String(err), false); });
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

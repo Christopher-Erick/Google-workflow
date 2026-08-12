@@ -456,6 +456,8 @@
     showView('dashboard');
     renderItems();
   }
+  window.applyBootstrap = applyBootstrap;
+  window.hideAuthBanner = hideAuthBanner;
 
   function boot() {
     if ($('appMain')) $('appMain').hidden = true;
@@ -471,7 +473,13 @@
       } catch (eBrand) {}
     }
 
-    // Never auto-call apiGetBootstrap here — stale sessions + deleted Drive hung the page blank.
+    // After OTP, load app once. Do not auto-bootstrap on every visit (that hung after Drive wipe).
+    var justLoggedIn = false;
+    try {
+      justLoggedIn = sessionStorage.getItem('naz_just_logged_in') === '1';
+      if (justLoggedIn) sessionStorage.removeItem('naz_just_logged_in');
+    } catch (e) {}
+
     run('apiGetPublicConfig')
       .then(function (pub) {
         if (pub && pub.branding) applyBranding(pub.branding);
@@ -486,54 +494,72 @@
         } else {
           showAuthBanner('Enter your roster Gmail. Only registered users can sign in.');
         }
+        if (justLoggedIn) {
+          return run('apiGetBootstrap');
+        }
+        return null;
+      })
+      .then(function (data) {
+        if (!data) return;
+        applyBootstrap(data);
       })
       .catch(function (err) {
         finishBootError((err && err.message) || String(err));
       });
   }
 
-  $('btnSendLoginCode').addEventListener('click', function () {
-    var email = ($('loginEmail').value || '').trim();
-    setMsg($('loginMsg'), 'Sending code…', true);
-    run('apiRequestLoginCode', email)
-      .then(function () {
-        setMsg($('loginMsg'), 'Code sent to ' + email + '. Check inbox (and spam).', true);
-      })
-      .catch(function (err) {
-        setMsg($('loginMsg'), err.message || String(err), false);
-      });
-  });
+  function bindLoginControls() {
+    if (window.__nazLoginBound) return;
+    window.__nazLoginBound = true;
 
-  $('btnVerifyLoginCode').addEventListener('click', function () {
-    var email = ($('loginEmail').value || '').trim();
-    var code = ($('loginCode').value || '').trim();
-    setMsg($('loginMsg'), 'Verifying…', true);
-    run('apiVerifyLoginCode', email, code)
-      .then(function () {
-        setMsg($('loginMsg'), 'Signed in. Loading…', true);
-        return run('apiGetBootstrap');
-      })
-      .then(function (data) {
-        hideAuthBanner();
-        applyBootstrap(data);
-      })
-      .catch(function (err) {
-        setMsg($('loginMsg'), err.message || String(err), false);
-      });
-  });
+    function bind(id, handler) {
+      var el = $(id);
+      if (!el || el.getAttribute('data-bound')) return;
+      el.setAttribute('data-bound', '1');
+      el.addEventListener('click', handler);
+    }
 
-  $('btnSwitchAccount').addEventListener('click', function (e) {
-    e.preventDefault();
-    switchAccount();
-  });
+    bind('btnSendLoginCode', function () {
+      var email = ($('loginEmail').value || '').trim();
+      setMsg($('loginMsg'), 'Sending code…', true);
+      run('apiRequestLoginCode', email)
+        .then(function () {
+          setMsg($('loginMsg'), 'Code sent to ' + email + '. Check inbox (and spam).', true);
+        })
+        .catch(function (err) {
+          setMsg($('loginMsg'), err.message || String(err), false);
+        });
+    });
 
-  $('btnRetryAuth').addEventListener('click', function () {
-    try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}
-    boot();
-  });
+    bind('btnVerifyLoginCode', function () {
+      var email = ($('loginEmail').value || '').trim();
+      var code = ($('loginCode').value || '').trim();
+      setMsg($('loginMsg'), 'Verifying…', true);
+      run('apiVerifyLoginCode', email, code)
+        .then(function () {
+          setMsg($('loginMsg'), 'Signed in. Loading…', true);
+          return run('apiGetBootstrap');
+        })
+        .then(function (data) {
+          hideAuthBanner();
+          applyBootstrap(data);
+        })
+        .catch(function (err) {
+          setMsg($('loginMsg'), err.message || String(err), false);
+        });
+    });
 
-  if ($('btnClearSession')) {
-    $('btnClearSession').addEventListener('click', function () {
+    bind('btnSwitchAccount', function (e) {
+      e.preventDefault();
+      switchAccount();
+    });
+
+    bind('btnRetryAuth', function () {
+      try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}
+      boot();
+    });
+
+    bind('btnClearSession', function () {
       setMsg($('loginMsg'), 'Clearing…', true);
       run('apiResetStaleLinks')
         .then(function (res) {
@@ -548,131 +574,156 @@
     });
   }
 
-  document.querySelectorAll('.tab').forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      showView(tab.getAttribute('data-view'));
+  // Bind login first so Setup/Dashboard wiring failures cannot disable Sign in
+  bindLoginControls();
+
+  try {
+    document.querySelectorAll('.tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        showView(tab.getAttribute('data-view'));
+      });
     });
-  });
 
-  $('btnAddMember').addEventListener('click', function () {
-    $('membersList').appendChild(memberCard({ name: '', email: '', whatsapp: '' }, $('membersList').children.length));
-    renumberMembers();
-  });
-
-  $('logoFile').addEventListener('change', function () {
-    var file = $('logoFile').files[0];
-    state.pendingLogo = null;
-    if (!file) return;
-    fileToPayload(file).then(function (p) {
-      state.pendingLogo = p;
-      applyBranding({
-        orgName: $('brandTitle').textContent,
-        slogan: $('orgSlogan').value,
-        logoDataUrl: 'data:' + p.mimeType + ';base64,' + p.fileBase64
+    if ($('btnAddMember')) {
+      $('btnAddMember').addEventListener('click', function () {
+        $('membersList').appendChild(memberCard({ name: '', email: '', whatsapp: '' }, $('membersList').children.length));
+        renumberMembers();
       });
-    }).catch(showError);
-  });
-
-  $('btnInitInfra').addEventListener('click', function () {
-    setMsg($('setupMsg'), 'Creating folders & database…', true);
-    run('apiRunInitialSetup')
-      .then(function (res) { setMsg($('setupMsg'), res.message || 'Ready.', true); })
-      .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
-  });
-
-  $('btnSaveRoles').addEventListener('click', function () {
-    setMsg($('setupMsg'), 'Saving…', true);
-    var payload = {
-      roles: collectRoles(),
-      members: collectMembers(),
-      webAppUrl: $('webAppUrl').value.trim(),
-      orgSlogan: $('orgSlogan').value.trim(),
-      whatsappMode: $('whatsappMode').value,
-      whatsappWebhookUrl: $('whatsappWebhookUrl').value.trim()
-    };
-    if (state.pendingLogo) {
-      payload.logoBase64 = state.pendingLogo.fileBase64;
-      payload.logoFileName = state.pendingLogo.fileName;
-      payload.logoMimeType = state.pendingLogo.mimeType;
     }
-    run('apiSaveRoles', payload)
-      .then(function () {
-        setMsg($('setupMsg'), 'Saved. Reloading…', true);
+
+    if ($('logoFile')) {
+      $('logoFile').addEventListener('change', function () {
+        var file = $('logoFile').files[0];
         state.pendingLogo = null;
-        return run('apiGetBootstrap');
-      })
-      .then(applyBootstrap)
-      .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
-  });
-
-  $('btnRefresh').addEventListener('click', function () {
-    refreshItems().catch(showError);
-  });
-  $('filterType').addEventListener('change', renderItems);
-  $('filterStatus').addEventListener('change', renderItems);
-
-  $('submitForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var file = $('docFile').files[0];
-    var btn = $('btnSubmit');
-    btn.disabled = true;
-    setMsg($('submitMsg'), 'Uploading…', true);
-    fileToPayload(file)
-      .then(function (filePayload) {
-        return run('apiSubmitItem', {
-          type: $('docType').value,
-          title: $('docTitle').value.trim(),
-          fileBase64: filePayload.fileBase64,
-          fileName: filePayload.fileName,
-          mimeType: filePayload.mimeType
-        });
-      })
-      .then(function () {
-        setMsg($('submitMsg'), 'Submitted. Notifications sent.', true);
-        $('submitForm').reset();
-        return run('apiGetBootstrap');
-      })
-      .then(applyBootstrap)
-      .then(function () { showView('dashboard'); })
-      .catch(function (err) { setMsg($('submitMsg'), err.message, false); })
-      .then(function () { btn.disabled = false; });
-  });
-
-  $('noteCancel').addEventListener('click', function () { $('noteDialog').close(); });
-  $('noteCancelBtn').addEventListener('click', function () { $('noteDialog').close(); });
-
-  $('noteForm').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var item = state.selected;
-    if (!item) return;
-    var mode = state.noteMode;
-    var note = $('noteText').value.trim();
-    var confirmBtn = $('noteConfirm');
-    confirmBtn.disabled = true;
-    var promise;
-    if (mode === 'decline') {
-      promise = run('apiDecline', item.id, note);
-    } else if (mode === 'edit') {
-      var file = $('replaceFile').files[0];
-      promise = fileToPayload(file).then(function (fp) {
-        return run('apiEditReplace', item.id, {
-          fileBase64: fp.fileBase64,
-          fileName: fp.fileName,
-          mimeType: fp.mimeType,
-          note: note
-        });
+        if (!file) return;
+        fileToPayload(file).then(function (p) {
+          state.pendingLogo = p;
+          applyBranding({
+            orgName: $('brandTitle').textContent,
+            slogan: $('orgSlogan').value,
+            logoDataUrl: 'data:' + p.mimeType + ';base64,' + p.fileBase64
+          });
+        }).catch(showError);
       });
-    } else {
-      promise = Promise.reject(new Error('Unknown action'));
     }
-    promise
-      .then(function () {
-        $('noteDialog').close();
-        return refreshItems();
-      })
-      .catch(showError)
-      .then(function () { confirmBtn.disabled = false; });
-  });
 
-  boot();
+    if ($('btnInitInfra')) {
+      $('btnInitInfra').addEventListener('click', function () {
+        setMsg($('setupMsg'), 'Creating folders & database…', true);
+        run('apiRunInitialSetup')
+          .then(function (res) { setMsg($('setupMsg'), res.message || 'Ready.', true); })
+          .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
+      });
+    }
+
+    if ($('btnSaveRoles')) {
+      $('btnSaveRoles').addEventListener('click', function () {
+        setMsg($('setupMsg'), 'Saving…', true);
+        var payload = {
+          roles: collectRoles(),
+          members: collectMembers(),
+          webAppUrl: $('webAppUrl').value.trim(),
+          orgSlogan: $('orgSlogan').value.trim(),
+          whatsappMode: $('whatsappMode').value,
+          whatsappWebhookUrl: $('whatsappWebhookUrl').value.trim()
+        };
+        if (state.pendingLogo) {
+          payload.logoBase64 = state.pendingLogo.fileBase64;
+          payload.logoFileName = state.pendingLogo.fileName;
+          payload.logoMimeType = state.pendingLogo.mimeType;
+        }
+        run('apiSaveRoles', payload)
+          .then(function () {
+            setMsg($('setupMsg'), 'Saved. Reloading…', true);
+            state.pendingLogo = null;
+            return run('apiGetBootstrap');
+          })
+          .then(applyBootstrap)
+          .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
+      });
+    }
+
+    if ($('btnRefresh')) {
+      $('btnRefresh').addEventListener('click', function () {
+        refreshItems().catch(showError);
+      });
+    }
+    if ($('filterType')) $('filterType').addEventListener('change', renderItems);
+    if ($('filterStatus')) $('filterStatus').addEventListener('change', renderItems);
+
+    if ($('submitForm')) {
+      $('submitForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var file = $('docFile').files[0];
+        var btn = $('btnSubmit');
+        btn.disabled = true;
+        setMsg($('submitMsg'), 'Uploading…', true);
+        fileToPayload(file)
+          .then(function (filePayload) {
+            return run('apiSubmitItem', {
+              type: $('docType').value,
+              title: $('docTitle').value.trim(),
+              fileBase64: filePayload.fileBase64,
+              fileName: filePayload.fileName,
+              mimeType: filePayload.mimeType
+            });
+          })
+          .then(function () {
+            setMsg($('submitMsg'), 'Submitted. Notifications sent.', true);
+            $('submitForm').reset();
+            return run('apiGetBootstrap');
+          })
+          .then(applyBootstrap)
+          .then(function () { showView('dashboard'); })
+          .catch(function (err) { setMsg($('submitMsg'), err.message, false); })
+          .then(function () { btn.disabled = false; });
+      });
+    }
+
+    if ($('noteCancel')) {
+      $('noteCancel').addEventListener('click', function () { $('noteDialog').close(); });
+    }
+    if ($('noteCancelBtn')) {
+      $('noteCancelBtn').addEventListener('click', function () { $('noteDialog').close(); });
+    }
+
+    if ($('noteForm')) {
+      $('noteForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var item = state.selected;
+        if (!item) return;
+        var mode = state.noteMode;
+        var note = $('noteText').value.trim();
+        var confirmBtn = $('noteConfirm');
+        confirmBtn.disabled = true;
+        var promise;
+        if (mode === 'decline') {
+          promise = run('apiDecline', item.id, note);
+        } else if (mode === 'edit') {
+          var file = $('replaceFile').files[0];
+          promise = fileToPayload(file).then(function (fp) {
+            return run('apiEditReplace', item.id, {
+              fileBase64: fp.fileBase64,
+              fileName: fp.fileName,
+              mimeType: fp.mimeType,
+              note: note
+            });
+          });
+        } else {
+          promise = Promise.reject(new Error('Unknown action'));
+        }
+        promise
+          .then(function () {
+            $('noteDialog').close();
+            return refreshItems();
+          })
+          .catch(showError)
+          .then(function () { confirmBtn.disabled = false; });
+      });
+    }
+
+    boot();
+  } catch (initErr) {
+    showAuthBanner('Sign-in is ready. If a button fails, use Clear session then request a code. (' + (initErr.message || initErr) + ')');
+  }
 </script>
