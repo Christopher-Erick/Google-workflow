@@ -65,6 +65,45 @@ function getScriptOwnerEmail_() {
   }
 }
 
+/** True when this session is the personal Admin officer (never the group inbox). */
+function isPersonalAdmin_(ctx) {
+  if (!ctx || !ctx.isAdmin || !ctx.email) return false;
+  var owner = getScriptOwnerEmail_();
+  if (owner && ctx.email === owner) return false;
+  return true;
+}
+
+/**
+ * First-time infra/setup: script-owner group Gmail.
+ * After setup: personal Admin Gmail only (not group mail).
+ */
+function requireAdminOperation_(allowFirstSetupOwner) {
+  var ctx = requireKnownUser_();
+  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
+    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
+  var owner = getScriptOwnerEmail_();
+
+  if (!setupDone && allowFirstSetupOwner) {
+    if (owner && ctx.email === owner) return ctx;
+    throw new Error(
+      'First-time Create Drive folders / first Save must use the script-owner group Gmail. ' +
+      'Set Admin to a different personal Gmail, Save, then Switch account and sign in as that Admin for all Admin work.'
+    );
+  }
+
+  if (!ctx.isAdmin) {
+    throw new Error(
+      'Only the personal Admin can do this. Sign in with the Admin officer Gmail (OTP) — not the group inbox.'
+    );
+  }
+  if (owner && ctx.email === owner) {
+    throw new Error(
+      'Admin operations must use the personal Admin Gmail, not the group inbox that owns the script.'
+    );
+  }
+  return ctx;
+}
+
 function getSessionCacheKey_() {
   try {
     var key = Session.getTemporaryActiveUserKey();
@@ -236,6 +275,11 @@ function getUserContext_() {
   if (isMember && myRoles.indexOf('members') < 0) myRoles.push('members');
 
   var isAdmin = !!(roles.admin && roles.admin.email && roles.admin.email === email);
+  // Group inbox must never count as Admin even if mis-configured
+  var owner = getScriptOwnerEmail_();
+  if (isAdmin && owner && email === owner) {
+    isAdmin = false;
+  }
   var known = myRoles.length > 0;
 
   return {

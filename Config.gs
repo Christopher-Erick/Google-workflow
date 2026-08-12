@@ -31,7 +31,7 @@ var OFFICER_ROLES = [
 ];
 
 var ROLE_LABELS = {
-  admin: 'Admin (overlay — separate person from Secretary)',
+  admin: 'Admin (personal Gmail — not group inbox, not Secretary)',
   chair: 'Chair',
   vice_chair: 'Vice Chair',
   secretary: 'Secretary (not Admin)',

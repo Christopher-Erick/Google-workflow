@@ -114,7 +114,7 @@ function apiResetStaleLinks() {
     props.setProperty(PROP.SETUP_DONE, '0');
     return {
       ok: true,
-      message: 'Cleared saved Drive/DB links. Sign in with the script-owner Gmail, then Create Drive folders & database.'
+      message: 'Cleared saved Drive/DB links. Sign in with the group Gmail only to recreate folders; set Admin to a personal Gmail, then use that Admin account for Admin work.'
     };
   });
 }

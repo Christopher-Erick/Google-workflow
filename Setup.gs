@@ -3,6 +3,7 @@
  */
 
 function runInitialSetup() {
+  requireAdminOperation_(true);
   ensureDb_();
   var root = ensureDriveTree_();
   var sync = { rosterCount: 0, removedViewers: 0 };
@@ -14,17 +15,12 @@ function runInitialSetup() {
     ok: true,
     message:
       'Database and Drive folders ready (Requisition / Minutes / Proof of Payment → Pending, Approved, Declined). ' +
-      'Save officers & members next — login access and Drive viewers update automatically on Save.'
+      'Set Admin to a personal Gmail (not the group inbox), Save, then sign in as that Admin for all Admin work.'
   };
 }
 
 function saveRoles_(payload) {
-  var ctx = getUserContext_();
-  // First-time setup: allow whoever is deploying (group account). After that, Admin only.
-  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
-  if (setupDone && !ctx.isAdmin) {
-    throw new Error('Only the Admin can update roles after setup. Secretary cannot change Setup.');
-  }
+  var ctx = requireAdminOperation_(true);
 
   ensureDb_();
   ensureDriveTree_();
@@ -40,14 +36,21 @@ function saveRoles_(payload) {
 
   var adminEmail = String((rolesPayload.admin && rolesPayload.admin.email) || '').trim().toLowerCase();
   var secretaryEmail = String((rolesPayload.secretary && rolesPayload.secretary.email) || '').trim().toLowerCase();
+  var ownerEmail = getScriptOwnerEmail_();
   if (!adminEmail) {
-    throw new Error('Admin email is required. Admin and Secretary are separate roles — do not leave Admin blank.');
+    throw new Error('Admin email is required. Admin must be a personal Gmail — different from the group inbox.');
   }
   if (!secretaryEmail) {
     throw new Error('Secretary email is required.');
   }
   if (adminEmail === secretaryEmail) {
     throw new Error('Admin and Secretary must be different people (different email addresses).');
+  }
+  if (ownerEmail && adminEmail === ownerEmail) {
+    throw new Error(
+      'Admin cannot be the group inbox (' + ownerEmail + '). ' +
+      'Use a different personal Gmail for Admin. Group mail owns Drive; Admin runs the system day-to-day.'
+    );
   }
 
   OFFICER_ROLES.forEach(function (role) {
@@ -93,18 +96,16 @@ function saveRoles_(payload) {
   ensureReminderTrigger_();
   audit_('', 'roles_saved', ctx.email, { rosterSync: sync });
 
+  var savedCtx = getUserContext_();
   return {
     ok: true,
     setupDone: true,
-    context: getUserContext_(),
+    context: savedCtx,
     branding: getBranding_(),
     rosterSync: sync,
     message:
-      'Saved. Roster updated for login immediately. Drive viewer access synced for ' +
-      (sync.rosterCount || 0) +
-      ' people' +
-      (sync.removedViewers ? ' (removed ' + sync.removedViewers + ' former viewer(s))' : '') +
-      '.'
+      'Saved. Roster & Drive viewers updated. ' +
+      'For Admin work (Setup, delete, force-approve), Switch account and sign in with the personal Admin Gmail — not the group inbox.'
   };
 }
 

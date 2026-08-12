@@ -460,6 +460,7 @@
       return;
     }
 
+    // After setup, only personal Admin sees Setup (group inbox never counts as Admin)
     if ($('tabSetup')) $('tabSetup').hidden = !ctx.isAdmin;
     showView('dashboard');
     renderItems();
@@ -497,11 +498,13 @@
         }
         if (!pub || !pub.setupDone) {
           showAuthBanner(
-            'Setup needed. Sign in with the group Gmail that owns this script, then Create Drive folders & database. ' +
-            'If login fails after a Drive wipe, click Clear session first.'
+            'Setup needed. First: sign in with the group Gmail that owns the script to Create Drive folders. ' +
+            'Set Admin to a different personal Gmail, Save, then Switch account and sign in as that Admin for all Admin operations.'
           );
         } else {
-          showAuthBanner('Enter your roster Gmail. Only registered users can sign in.');
+          showAuthBanner(
+            'Enter your roster Gmail. Admin operations use the personal Admin account — not the group inbox.'
+          );
         }
         if (justLoggedIn) {
           return run('apiGetBootstrap');
@@ -576,7 +579,7 @@
         .then(function (res) {
           setMsg($('loginMsg'), (res && res.message) || 'Cleared. Request a new login code.', true);
           showAuthBanner(
-            'Links cleared. Sign in with the group Gmail that owns the script, then Create Drive folders & database.'
+            'Links cleared. First sign in with the group Gmail to Create folders, set Admin to a personal Gmail, Save, then Switch account to that Admin.'
           );
         })
         .catch(function (err) {
