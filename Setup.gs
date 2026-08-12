@@ -5,11 +5,16 @@
 function runInitialSetup() {
   ensureDb_();
   var root = ensureDriveTree_();
-  try { shareFolderWithRoster_(root); } catch (e) {}
+  var sync = { rosterCount: 0, removedViewers: 0 };
+  try { sync = syncRosterDriveAccess_(); } catch (e) {
+    try { shareFolderWithRoster_(root); } catch (e2) {}
+  }
   ensureReminderTrigger_();
   return {
     ok: true,
-    message: 'Database and Drive folders ready (Requisition/Minutes/Proof of Payment → Pending, Approved, Declined). Save roles next, then click Create Drive folders again after saving to refresh viewer sharing.'
+    message:
+      'Database and Drive folders ready (Requisition / Minutes / Proof of Payment → Pending, Approved, Declined). ' +
+      'Save officers & members next — login access and Drive viewers update automatically on Save.'
   };
 }
 
@@ -58,10 +63,14 @@ function saveRoles_(payload) {
 
   saveMembersList_(payload.members || []);
   ensureAccessEmailsOnRoster_(ctx.email);
-  // Refresh Drive sharing so all roster members can view documents
+
+  // Login roster is the saved sheet (live on next OTP). Sync Drive viewers now.
+  var sync = { rosterCount: 0, removedViewers: 0 };
   try {
-    shareFolderWithRoster_(ensureDriveTree_());
-  } catch (eShare) {}
+    sync = syncRosterDriveAccess_();
+  } catch (eShare) {
+    try { shareFolderWithRoster_(ensureDriveTree_()); } catch (e2) {}
+  }
 
   if (payload.webAppUrl) {
     getScriptProps_().setProperty(PROP.WEB_APP_URL, String(payload.webAppUrl).trim());
@@ -82,9 +91,21 @@ function saveRoles_(payload) {
 
   getScriptProps_().setProperty(PROP.SETUP_DONE, '1');
   ensureReminderTrigger_();
-  audit_('', 'roles_saved', ctx.email, {});
+  audit_('', 'roles_saved', ctx.email, { rosterSync: sync });
 
-  return { ok: true, setupDone: true, context: getUserContext_(), branding: getBranding_() };
+  return {
+    ok: true,
+    setupDone: true,
+    context: getUserContext_(),
+    branding: getBranding_(),
+    rosterSync: sync,
+    message:
+      'Saved. Roster updated for login immediately. Drive viewer access synced for ' +
+      (sync.rosterCount || 0) +
+      ' people' +
+      (sync.removedViewers ? ' (removed ' + sync.removedViewers + ' former viewer(s))' : '') +
+      '.'
+  };
 }
 
 function saveMembersList_(members) {

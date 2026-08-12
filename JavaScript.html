@@ -644,8 +644,8 @@
           payload.logoMimeType = state.pendingLogo.mimeType;
         }
         run('apiSaveRoles', payload)
-          .then(function () {
-            setMsg($('setupMsg'), 'Saved. Reloading…', true);
+          .then(function (res) {
+            setMsg($('setupMsg'), (res && res.message) || 'Saved. Roster & Drive access updated.', true);
             state.pendingLogo = null;
             return run('apiGetBootstrap');
           })

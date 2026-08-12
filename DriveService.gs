@@ -176,6 +176,65 @@ function listRosterEmailsForSharing_() {
   return Object.keys(set);
 }
 
+/**
+ * Keep Drive viewer access aligned with the current officer/member roster.
+ * Called whenever Admin saves Setup — adds new people, removes former ones.
+ */
+function syncRosterDriveAccess_() {
+  var root = ensureDriveTree_();
+  var wanted = {};
+  listRosterEmailsForSharing_().forEach(function (email) {
+    wanted[String(email).toLowerCase()] = true;
+  });
+  var owner = '';
+  try { owner = getScriptOwnerEmail_(); } catch (eO) {}
+  if (owner) wanted[owner] = true;
+
+  var wantedList = Object.keys(wanted);
+  var added = 0;
+
+  function shareOne_(folder) {
+    if (!folder) return;
+    wantedList.forEach(function (email) {
+      try {
+        folder.addViewer(email);
+        added++;
+      } catch (e) {
+        // already has access / invalid / cannot share
+      }
+    });
+  }
+
+  shareOne_(root);
+  ['Requisition', 'Minutes', 'Proof of Payment'].forEach(function (typeName) {
+    try {
+      var typeFolder = findOrCreateFolder_(root, typeName);
+      shareOne_(typeFolder);
+      ['Pending', 'Approved', 'Declined'].forEach(function (statusName) {
+        shareOne_(findOrCreateFolder_(typeFolder, statusName));
+      });
+    } catch (eType) {}
+  });
+
+  var removed = 0;
+  try {
+    var viewers = root.getViewers();
+    for (var i = 0; i < viewers.length; i++) {
+      var ve = String(viewers[i].getEmail() || '').trim().toLowerCase();
+      if (!ve || wanted[ve]) continue;
+      try {
+        root.removeViewer(viewers[i]);
+        removed++;
+      } catch (eRem) {}
+    }
+  } catch (eView) {}
+
+  return {
+    rosterCount: wantedList.length,
+    removedViewers: removed
+  };
+}
+
 function shareFolderWithRoster_(folder) {
   if (!folder) return;
   var emails = listRosterEmailsForSharing_();
