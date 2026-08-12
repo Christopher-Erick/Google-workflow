@@ -81,44 +81,37 @@
     var banner = $('authBanner');
     banner.hidden = false;
     $('authBannerText').textContent = message ||
-      'This browser has multiple Google accounts, so the app cannot see which one to use. Choose your roster Gmail (the email Admin added in Setup).';
+      'Enter your roster Gmail. We will email a 6-digit login code so Chrome multi-account does not block you.';
     var link = $('btnChooseAccount');
     if (chooserUrl) {
       link.href = chooserUrl;
-      link.hidden = false;
-    } else {
-      link.hidden = true;
     }
   }
 
   function hideAuthBanner() {
     $('authBanner').hidden = true;
-  }
-
-  function accountChooserUrl(webAppUrl) {
-    if (!webAppUrl) return '';
-    return 'https://accounts.google.com/AccountChooser?continue=' +
-      encodeURIComponent(webAppUrl) + '&prompt=select_account';
-  }
-
-  function maybeAutoChooseAccount(chooserUrl) {
-    if (!chooserUrl) return;
-    try {
-      if (sessionStorage.getItem('naz_auth_redirected') === '1') return;
-      sessionStorage.setItem('naz_auth_redirected', '1');
-      window.top.location.href = chooserUrl;
-    } catch (e) {
-      // ignore
-    }
+    setMsg($('loginMsg'), '', true);
   }
 
   function isAuthIdentityError(msg) {
-    msg = String(msg || '').toLowerCase();
-    return msg.indexOf('email') >= 0 ||
-      msg.indexOf('google account') >= 0 ||
-      msg.indexOf('roster') >= 0 ||
-      msg.indexOf('sign in') >= 0 ||
-      msg.indexOf('multiple accounts') >= 0;
+    msg = String(msg || '');
+    return msg.indexOf('IDENTITY_REQUIRED') >= 0 ||
+      msg.toLowerCase().indexOf('email') >= 0 ||
+      msg.toLowerCase().indexOf('google account') >= 0 ||
+      msg.toLowerCase().indexOf('roster') >= 0 ||
+      msg.toLowerCase().indexOf('sign in') >= 0 ||
+      msg.toLowerCase().indexOf('identity') >= 0;
+  }
+
+  function finishBootError(msg, chooser) {
+    var clean = String(msg || '').replace(/^IDENTITY_REQUIRED:\s*/i, '');
+    $('viewLoading').innerHTML =
+      '<p class="msg err">' + escapeHtml(clean) + '</p>' +
+      '<p class="lede">Use the login code form above — it works even when Chrome has many Google accounts.</p>';
+    showAuthBanner(clean, chooser);
+    $('navTabs').hidden = false;
+    $('tabSetup').hidden = false;
+    showView('loading');
   }
   function renderSetupForm(setup) {
     var form = $('setupForm');
@@ -444,18 +437,35 @@
       });
   }
 
-  function finishBootError(msg, chooser) {
-    $('viewLoading').innerHTML =
-      '<p class="msg err">' + escapeHtml(msg) + '</p>' +
-      '<p class="lede">Normal Chrome often fails when several Google accounts are signed in. Incognito works because it has only one account.</p>';
-    showAuthBanner(msg, chooser);
-    if (isAuthIdentityError(msg) && chooser) {
-      maybeAutoChooseAccount(chooser);
-    }
-    $('navTabs').hidden = false;
-    $('tabSetup').hidden = false;
-    showView('loading');
-  }
+  $('btnSendLoginCode').addEventListener('click', function () {
+    var email = ($('loginEmail').value || '').trim();
+    setMsg($('loginMsg'), 'Sending code…', true);
+    run('apiRequestLoginCode', email)
+      .then(function () {
+        setMsg($('loginMsg'), 'Code sent to ' + email + '. Check inbox (and spam).', true);
+      })
+      .catch(function (err) {
+        setMsg($('loginMsg'), err.message || String(err), false);
+      });
+  });
+
+  $('btnVerifyLoginCode').addEventListener('click', function () {
+    var email = ($('loginEmail').value || '').trim();
+    var code = ($('loginCode').value || '').trim();
+    setMsg($('loginMsg'), 'Verifying…', true);
+    run('apiVerifyLoginCode', email, code)
+      .then(function () {
+        setMsg($('loginMsg'), 'Signed in. Loading…', true);
+        return run('apiGetBootstrap');
+      })
+      .then(function (data) {
+        hideAuthBanner();
+        applyBootstrap(data);
+      })
+      .catch(function (err) {
+        setMsg($('loginMsg'), err.message || String(err), false);
+      });
+  });
 
   $('btnRetryAuth').addEventListener('click', function () {
     try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}

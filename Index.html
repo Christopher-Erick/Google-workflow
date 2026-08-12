@@ -28,10 +28,29 @@
 
     <section id="authBanner" class="auth-banner" hidden>
       <p id="authBannerText"></p>
-      <div class="actions-row">
-        <a class="btn primary" id="btnChooseAccount" href="#" target="_top">Choose Google account</a>
-        <button type="button" class="btn secondary" id="btnRetryAuth">Try again</button>
+      <div class="login-box">
+        <div class="field">
+          <label for="loginEmail">Your roster Gmail</label>
+          <input id="loginEmail" type="email" placeholder="you@gmail.com" autocomplete="username" />
+        </div>
+        <div class="actions-row">
+          <button type="button" class="btn primary" id="btnSendLoginCode">Email me a login code</button>
+        </div>
+        <div class="field">
+          <label for="loginCode">6-digit code</label>
+          <input id="loginCode" type="text" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" />
+        </div>
+        <div class="actions-row">
+          <button type="button" class="btn primary" id="btnVerifyLoginCode">Verify &amp; continue</button>
+          <button type="button" class="btn secondary" id="btnRetryAuth">Try again</button>
+        </div>
+        <p id="loginMsg" class="msg" hidden></p>
       </div>
+      <p class="lede" style="margin-top:0.75rem;">
+        Or
+        <a id="btnChooseAccount" href="#" target="_top">switch Google account</a>
+        (works best in a Chrome profile with only one account).
+      </p>
     </section>
 
     <main class="shell">

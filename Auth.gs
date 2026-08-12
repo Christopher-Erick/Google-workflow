@@ -34,17 +34,17 @@ function listMembers_() {
 }
 
 function getActiveUserEmail_() {
-  // IMPORTANT: do NOT fall back to EffectiveUser.
-  // Web app runs as the group Gmail ("Execute as: Me"), so EffectiveUser is always
-  // the group inbox. Using it as a fallback makes every multi-account browser
-  // session look like the group account.
+  // IMPORTANT: do NOT fall back to EffectiveUser (group inbox / script owner).
   var email = '';
   try {
     email = Session.getActiveUser().getEmail();
   } catch (e) {
     email = '';
   }
-  return String(email || '').trim().toLowerCase();
+  email = String(email || '').trim().toLowerCase();
+  if (email) return email;
+  // Multi-account Chrome often hides ActiveUser — use verified email OTP session.
+  return getCachedSessionEmail_() || '';
 }
 
 function getScriptOwnerEmail_() {
@@ -53,6 +53,106 @@ function getScriptOwnerEmail_() {
   } catch (e) {
     return '';
   }
+}
+
+function getSessionCacheKey_() {
+  try {
+    var key = Session.getTemporaryActiveUserKey();
+    if (key) return 'naz_session_' + key;
+  } catch (e) {}
+  return '';
+}
+
+function getCachedSessionEmail_() {
+  var key = getSessionCacheKey_();
+  if (!key) return '';
+  try {
+    return String(CacheService.getUserCache().get(key) || CacheService.getScriptCache().get(key) || '')
+      .trim()
+      .toLowerCase();
+  } catch (e) {
+    return '';
+  }
+}
+
+function setCachedSessionEmail_(email) {
+  email = String(email || '').trim().toLowerCase();
+  var key = getSessionCacheKey_();
+  if (!key || !email) return false;
+  // 12 hours
+  var ttl = 43200;
+  try {
+    CacheService.getUserCache().put(key, email, ttl);
+  } catch (e) {}
+  try {
+    CacheService.getScriptCache().put(key, email, ttl);
+  } catch (e2) {}
+  return true;
+}
+
+function clearCachedSessionEmail_() {
+  var key = getSessionCacheKey_();
+  if (!key) return;
+  try { CacheService.getUserCache().remove(key); } catch (e) {}
+  try { CacheService.getScriptCache().remove(key); } catch (e2) {}
+}
+
+function isEmailOnRoster_(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') < 0) return false;
+  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
+  if (!setupDone) return true; // first-time setup: any mailbox can verify
+  var roleMap = getRoleMap_();
+  for (var i = 0; i < OFFICER_ROLES.length; i++) {
+    var role = OFFICER_ROLES[i];
+    if (roleMap[role] && roleMap[role].email === email) return true;
+  }
+  return listMembers_().some(function (m) { return m.email === email; });
+}
+
+function requestLoginCode_(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') < 0) {
+    throw new Error('Enter a valid Gmail address.');
+  }
+  ensureDb_();
+  if (!isEmailOnRoster_(email)) {
+    throw new Error('That email is not on the SHE roster. Ask Admin to add it in Setup first.');
+  }
+  var code = String(Math.floor(100000 + Math.random() * 900000));
+  var cacheKey = 'naz_login_code_' + email;
+  CacheService.getScriptCache().put(cacheKey, code, 600); // 10 minutes
+  MailApp.sendEmail({
+    to: email,
+    subject: '[' + APP_NAME + '] Login code: ' + code,
+    body:
+      'Your login code for ' + APP_NAME + ' is:\n\n' +
+      code +
+      '\n\nIt expires in 10 minutes.\n' +
+      'If you did not request this, ignore this email.\n'
+  });
+  return { sent: true, email: email, expiresInMinutes: 10 };
+}
+
+function verifyLoginCode_(email, code) {
+  email = String(email || '').trim().toLowerCase();
+  code = String(code || '').trim();
+  if (!email || !code) throw new Error('Email and code are required.');
+  ensureDb_();
+  if (!isEmailOnRoster_(email)) {
+    throw new Error('That email is not on the SHE roster.');
+  }
+  var cacheKey = 'naz_login_code_' + email;
+  var expected = CacheService.getScriptCache().get(cacheKey);
+  if (!expected || expected !== code) {
+    throw new Error('Invalid or expired code. Request a new one.');
+  }
+  CacheService.getScriptCache().remove(cacheKey);
+  if (!setCachedSessionEmail_(email)) {
+    throw new Error('Could not create a browser session. Try Incognito or a single-account Chrome profile.');
+  }
+  audit_('', 'otp_login', email, {});
+  return getUserContext_();
 }
 
 function getUserContext_() {
@@ -89,13 +189,10 @@ function getUserContext_() {
 
 function requireKnownUser_() {
   var ctx = getUserContext_();
-  var owner = getScriptOwnerEmail_();
   if (!ctx.email) {
     throw new Error(
-      'Chrome did not tell us which Google account you are using (common when several accounts are signed in). ' +
-      'Click “Choose Google account” / “Switch account” and pick your personal roster Gmail' +
-      (owner ? ' — not the group inbox (' + owner + ') unless you mean to use that account' : '') +
-      '.'
+      'IDENTITY_REQUIRED: Enter your roster Gmail and the login code we email you. ' +
+      'Chrome is not sharing which Google account you are using (common with several accounts signed in).'
     );
   }
   if (ctx.setupDone && !ctx.isKnownUser) {

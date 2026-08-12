@@ -64,6 +64,7 @@ function apiGetPublicConfig() {
     if (!webAppUrl) {
       try { webAppUrl = ScriptApp.getService().getUrl() || ''; } catch (e) {}
     }
+    webAppUrl = String(webAppUrl || '').replace(/\/macros\/u\/\d+\//, '/macros/');
     var branding = getBranding_();
     return {
       appName: APP_NAME,
@@ -73,8 +74,36 @@ function apiGetPublicConfig() {
       accountChooserUrl: webAppUrl
         ? 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(webAppUrl) + '&prompt=select_account'
         : '',
-      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1'
+      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1',
+      identityRequired: !getActiveUserEmail_()
     };
+  });
+}
+
+function apiRequestLoginCode(email) {
+  return withError_(function () {
+    return requestLoginCode_(email);
+  });
+}
+
+function apiVerifyLoginCode(email, code) {
+  return withError_(function () {
+    var ctx = verifyLoginCode_(email, code);
+    return {
+      context: {
+        email: ctx.email,
+        roles: ctx.roles,
+        isAdmin: ctx.isAdmin,
+        setupDone: ctx.setupDone
+      }
+    };
+  });
+}
+
+function apiLogoutSession() {
+  return withError_(function () {
+    clearCachedSessionEmail_();
+    return { ok: true };
   });
 }
 
