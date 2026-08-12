@@ -256,18 +256,22 @@
             var code = (byId('loginCode').value || '').trim();
             msg('Verifying…', true);
             call('apiVerifyLoginCode', email, code)
-              .then(function () {
-                msg('Signed in. Loading…', true);
-                if (typeof window.applyBootstrap === 'function') {
-                  return call('apiGetBootstrap').then(function (data) {
-                    if (typeof window.hideAuthBanner === 'function') window.hideAuthBanner();
-                    window.applyBootstrap(data);
-                  });
+              .then(function (res) {
+                msg('Signed in. Opening Setup…', true);
+                var data = res && res.bootstrap ? res.bootstrap : null;
+                if (data && typeof window.applyBootstrap === 'function') {
+                  window.applyBootstrap(data);
+                  return;
                 }
-                try { sessionStorage.setItem('naz_just_logged_in', '1'); } catch (e) {}
-                window.location.reload();
+                if (typeof window.applyBootstrap === 'function') {
+                  return call('apiGetBootstrap').then(window.applyBootstrap);
+                }
+                msg('Signed in, but the app UI failed to load. Click Try again.', false);
               })
-              .catch(function (err) { msg(err.message || String(err), false); });
+              .catch(function (err) {
+                if (typeof window.showAuthBanner === 'function') window.showAuthBanner();
+                msg(err.message || String(err), false);
+              });
           });
         }
         if (clearBtn && !clearBtn.getAttribute('data-bound')) {

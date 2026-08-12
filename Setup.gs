@@ -192,18 +192,24 @@ function getBranding_() {
 
 function getSetupState_() {
   var ctx = getUserContext_();
-  var roleMap = getRoleMap_();
   var roles = {};
-  OFFICER_ROLES.forEach(function (r) {
-    roles[r] = roleMap[r] || { name: '', email: '', whatsapp: '' };
-  });
-  var webAppUrl = getWebAppUrl_();
   var members = [];
-  try {
-    members = listMembers_().map(function (m) {
-      return { name: m.name, email: m.email, whatsapp: m.whatsapp };
+  if (ctx.setupDone) {
+    var roleMap = getRoleMap_();
+    OFFICER_ROLES.forEach(function (r) {
+      roles[r] = roleMap[r] || { name: '', email: '', whatsapp: '' };
     });
-  } catch (e) {}
+    try {
+      members = listMembers_().map(function (m) {
+        return { name: m.name, email: m.email, whatsapp: m.whatsapp };
+      });
+    } catch (e) {}
+  } else {
+    OFFICER_ROLES.forEach(function (r) {
+      roles[r] = { name: '', email: '', whatsapp: '' };
+    });
+  }
+  var webAppUrl = getWebAppUrl_();
   return {
     setupDone: ctx.setupDone,
     roles: roles,

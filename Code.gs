@@ -83,13 +83,15 @@ function apiRequestLoginCode(email) {
 function apiVerifyLoginCode(email, code) {
   return withError_(function () {
     var ctx = verifyLoginCode_(email, code);
+    // Return bootstrap in the same call so the client never hangs on a second Drive probe
     return {
       context: {
         email: ctx.email,
         roles: ctx.roles,
         isAdmin: ctx.isAdmin,
         setupDone: ctx.setupDone
-      }
+      },
+      bootstrap: buildBootstrapPayload_(ctx)
     };
   });
 }
@@ -117,32 +119,47 @@ function apiResetStaleLinks() {
   });
 }
 
+function buildBootstrapPayload_(ctx) {
+  ctx = ctx || getUserContext_();
+  var setup = getSetupState_();
+  // Prefer the verified session email on the payload
+  setup.context = {
+    email: ctx.email,
+    roles: ctx.roles,
+    isAdmin: ctx.isAdmin
+  };
+  var items = [];
+  if (setup.setupDone) {
+    try {
+      items = listEnrichedItems_({});
+    } catch (eItems) {
+      items = [];
+    }
+  }
+  return {
+    appName: APP_NAME,
+    orgName: ORG_NAME,
+    setup: setup,
+    branding: setup.branding,
+    context: {
+      email: ctx.email,
+      roles: ctx.roles,
+      isAdmin: ctx.isAdmin,
+      setupDone: ctx.setupDone
+    },
+    items: items,
+    canSubmit: {
+      requisition: canSubmitType_(ctx, 'requisition'),
+      minutes: canSubmitType_(ctx, 'minutes'),
+      proof_of_payment: canSubmitType_(ctx, 'proof_of_payment')
+    }
+  };
+}
+
 function apiGetBootstrap() {
   return withError_(function () {
     var ctx = requireKnownUser_();
-    var setup = getSetupState_();
-    var items = [];
-    if (setup.setupDone) {
-      items = listEnrichedItems_({});
-    }
-    return {
-      appName: APP_NAME,
-      orgName: ORG_NAME,
-      setup: setup,
-      branding: setup.branding,
-      context: {
-        email: ctx.email,
-        roles: ctx.roles,
-        isAdmin: ctx.isAdmin,
-        setupDone: ctx.setupDone
-      },
-      items: items,
-      canSubmit: {
-        requisition: canSubmitType_(ctx, 'requisition'),
-        minutes: canSubmitType_(ctx, 'minutes'),
-        proof_of_payment: canSubmitType_(ctx, 'proof_of_payment')
-      }
-    };
+    return buildBootstrapPayload_(ctx);
   });
 }
 

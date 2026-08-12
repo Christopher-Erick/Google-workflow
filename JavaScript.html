@@ -433,31 +433,39 @@
   }
 
   function applyBootstrap(data) {
+    if (!data) throw new Error('No app data returned after login.');
     state.bootstrap = data;
     state.items = data.items || [];
     var ctx = data.context || {};
     applyBranding(data.branding || (data.setup && data.setup.branding));
-    $('userChip').textContent = formatUserChip(ctx);
+    if ($('userChip')) $('userChip').textContent = formatUserChip(ctx);
+
+    var setup = data.setup || {};
+    try {
+      renderSetupForm(setup);
+      renderSubmitOptions(data.canSubmit || {});
+    } catch (renderErr) {
+      throw new Error('Could not render app: ' + (renderErr.message || renderErr));
+    }
+
+    // Only hide login after UI is ready — prevents blank screen on errors
     hideAuthBanner();
     if ($('viewLoading')) $('viewLoading').hidden = true;
-
-    $('navTabs').hidden = false;
-    var setup = data.setup || {};
-    renderSetupForm(setup);
-    renderSubmitOptions(data.canSubmit || {});
+    if ($('navTabs')) $('navTabs').hidden = false;
 
     if (!setup.setupDone) {
-      $('tabSetup').hidden = false;
+      if ($('tabSetup')) $('tabSetup').hidden = false;
       showView('setup');
       return;
     }
 
-    $('tabSetup').hidden = !ctx.isAdmin;
+    if ($('tabSetup')) $('tabSetup').hidden = !ctx.isAdmin;
     showView('dashboard');
     renderItems();
   }
   window.applyBootstrap = applyBootstrap;
   window.hideAuthBanner = hideAuthBanner;
+  window.showAuthBanner = showAuthBanner;
 
   function boot() {
     if ($('appMain')) $('appMain').hidden = true;
@@ -536,15 +544,17 @@
       var code = ($('loginCode').value || '').trim();
       setMsg($('loginMsg'), 'Verifying…', true);
       run('apiVerifyLoginCode', email, code)
-        .then(function () {
-          setMsg($('loginMsg'), 'Signed in. Loading…', true);
-          return run('apiGetBootstrap');
-        })
-        .then(function (data) {
-          hideAuthBanner();
-          applyBootstrap(data);
+        .then(function (res) {
+          setMsg($('loginMsg'), 'Signed in. Opening Setup…', true);
+          var data = res && res.bootstrap ? res.bootstrap : null;
+          if (data) {
+            applyBootstrap(data);
+            return;
+          }
+          return run('apiGetBootstrap').then(applyBootstrap);
         })
         .catch(function (err) {
+          showAuthBanner();
           setMsg($('loginMsg'), err.message || String(err), false);
         });
     });

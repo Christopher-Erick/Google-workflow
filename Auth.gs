@@ -110,12 +110,10 @@ function clearCachedSessionEmail_() {
 function isEmailOnRoster_(email) {
   email = String(email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') < 0) return false;
-  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
-  if (setupDone && !tryOpenDb_()) {
-    setupDone = false;
-  }
+  // Do not probe Drive here — deleted spreadsheet IDs hang the web app.
+  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
+    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
   if (!setupDone) {
-    // Before setup is finished, only the script owner (group Gmail) may enter Setup.
     var owner = getScriptOwnerEmail_();
     return !!(owner && owner === email);
   }
@@ -196,11 +194,36 @@ function verifyLoginCode_(email, code) {
     throw new Error('Could not create a browser session. Try Incognito or a single-account Chrome profile.');
   }
   try { audit_('', 'otp_login', email, {}); } catch (eAudit) {}
-  return getUserContext_();
+  // Lightweight context — avoid Drive/Sheets probes right after OTP
+  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
+    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
+  return {
+    email: email,
+    roles: [],
+    isAdmin: false,
+    isKnownUser: true,
+    roleMap: {},
+    setupDone: setupDone
+  };
 }
 
 function getUserContext_() {
   var email = getActiveUserEmail_();
+  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
+    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
+
+  // Pre-setup / wiped DB: never touch Sheets/Drive
+  if (!setupDone) {
+    return {
+      email: email,
+      roles: [],
+      isAdmin: false,
+      isKnownUser: true,
+      roleMap: {},
+      setupDone: false
+    };
+  }
+
   var roles = getRoleMap_();
   var myRoles = [];
   OFFICER_ROLES.forEach(function (role) {
@@ -212,17 +235,8 @@ function getUserContext_() {
   var isMember = members.some(function (m) { return m.email && m.email === email; });
   if (isMember && myRoles.indexOf('members') < 0) myRoles.push('members');
 
-  // Admin and Secretary are separate people/roles — never conflate them.
   var isAdmin = !!(roles.admin && roles.admin.email && roles.admin.email === email);
-
-  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
-  // If setup was marked done but DB was deleted, treat as not done.
-  if (setupDone && !tryOpenDb_()) {
-    setupDone = false;
-  }
   var known = myRoles.length > 0;
-  // Before setup completes, allow the deploying user in
-  if (!setupDone) known = true;
 
   return {
     email: email,

@@ -18,19 +18,14 @@ function clearStaleDbId_() {
 }
 
 /**
- * Open existing DB if the stored file still exists. Never creates.
- * Clears stale IDs when Drive/Sheet was deleted from the trash.
+ * Open existing DB if the stored id still works. Never creates.
+ * Avoid DriveApp.getFileById — it hangs on deleted IDs after a wipe.
  */
 function tryOpenDb_() {
   var props = getScriptProps_();
   var id = props.getProperty(PROP.DB_SPREADSHEET_ID);
   if (!id) return null;
   try {
-    var file = DriveApp.getFileById(id);
-    if (file.isTrashed()) {
-      clearStaleDbId_();
-      return null;
-    }
     return SpreadsheetApp.openById(id);
   } catch (e) {
     clearStaleDbId_();
