@@ -21,7 +21,7 @@
       padding: 1.5rem;
     }
     .card {
-      width: min(440px, 100%);
+      width: min(480px, 100%);
       background: #fff;
       border: 1px solid #e4d6ea;
       border-radius: 16px;
@@ -33,7 +33,7 @@
     p { color: #6a5b6e; line-height: 1.45; }
     .btn {
       display: inline-block;
-      margin-top: 0.75rem;
+      margin: 0.35rem;
       background: var(--brand);
       color: #fff;
       text-decoration: none;
@@ -46,45 +46,34 @@
       background: #fff;
       color: var(--brand);
       border: 1px solid #e4d6ea;
-      margin-left: 0.35rem;
     }
-    small { display: block; margin-top: 1rem; color: #8a7a90; font-family: system-ui, sans-serif; }
+    small { display: block; margin-top: 1rem; color: #8a7a90; font-family: system-ui, sans-serif; text-align: left; }
+    ol { text-align: left; color: #6a5b6e; font-family: system-ui, sans-serif; font-size: 0.92rem; }
   </style>
   <script>
-    // Canonical web app URL — NO /u/0/ or /u/3/ (those break Google multi-login).
+    // After account chooser, land on the iframe host (avoids broken /macros/u/N/ bookmarks).
+    var APP_HOST = 'https://christopher-erick.github.io/Google-workflow/app.html';
     var EXEC_URL = 'https://script.google.com/macros/s/AKfycbzKCinJMx4fOzdxP40zqclyvqFRvX_f0Dh1JGXIp7VndXeFiajdMDFasCSQDvb9rFFi/exec';
 
     function cleanExecUrl(url) {
       return String(url || '').replace(/\/macros\/u\/\d+\//, '/macros/');
     }
 
-    function chooserUrl(execUrl) {
+    function chooserToApp() {
       return 'https://accounts.google.com/AccountChooser?continue=' +
-        encodeURIComponent(cleanExecUrl(execUrl)) +
+        encodeURIComponent(APP_HOST) +
         '&prompt=select_account';
     }
 
-    function go(auto) {
-      var exec = cleanExecUrl(EXEC_URL);
-      var target = chooserUrl(exec);
-      if (auto) {
-        window.location.replace(target);
-      } else {
-        window.location.href = target;
-      }
-    }
-
-    function goDirect() {
-      window.location.href = cleanExecUrl(EXEC_URL);
-    }
-
-    // Auto-open account chooser → clean /exec (works for personal + group).
     window.addEventListener('DOMContentLoaded', function () {
-      document.getElementById('openBtn').href = chooserUrl(EXEC_URL);
+      document.getElementById('openBtn').href = chooserToApp();
+      document.getElementById('appBtn').href = APP_HOST;
       document.getElementById('directBtn').href = cleanExecUrl(EXEC_URL);
       var params = new URLSearchParams(window.location.search);
       if (params.get('auto') !== '0') {
-        setTimeout(function () { go(true); }, 600);
+        setTimeout(function () {
+          window.location.replace(chooserToApp());
+        }, 500);
       }
     });
   </script>
@@ -93,12 +82,21 @@
   <div class="card">
     <h1>Nazarene for she Organisation</h1>
     <p>She empowered, Community inspired.</p>
-    <p>Opening the document workflow… Choose your <strong>personal</strong> or <strong>group</strong> Google account when asked.</p>
+    <p>Select your Google account, then the workflow opens in a stable window (not the broken <code>/u/0/</code> link).</p>
     <p>
-      <a class="btn" id="openBtn" href="#">Choose account &amp; open</a>
-      <a class="btn secondary" id="directBtn" href="#">Open directly</a>
+      <a class="btn" id="openBtn" href="#">1. Choose account</a>
+      <a class="btn secondary" id="appBtn" href="#">2. Open workflow</a>
     </p>
-    <small>Bookmark this page. Do not bookmark URLs that contain <code>/u/0/</code> or <code>/u/3/</code>.</small>
+    <p><a class="btn secondary" id="directBtn" href="#" target="_blank" rel="noopener">Direct script link</a></p>
+
+    <ol>
+      <li>If you still see a Drive error, the deployment must be recreated (group Gmail).</li>
+      <li>Apps Script → Deploy → <strong>New deployment</strong> → Web app.</li>
+      <li>Execute as: <strong>Me</strong>. Who has access: <strong>Anyone with a Google account</strong>.</li>
+      <li>Deploy → copy the new URL → send it to your developer to update this launcher.</li>
+      <li>On Brave: Shields <strong>Down</strong> for script.google.com.</li>
+    </ol>
+    <small>Bookmark <strong>open.html</strong> or <strong>app.html</strong> only — never bookmark a link that contains <code>/u/0/</code> or <code>/u/3/</code>.</small>
   </div>
 </body>
 </html>

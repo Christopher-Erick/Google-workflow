@@ -3,13 +3,18 @@
  */
 
 function doGet(e) {
-  ensureDb_();
+  try {
+    ensureDb_();
+  } catch (err) {
+    // Still serve UI so users don't hit a blank/Drive-style failure on first paint
+  }
   var template = HtmlService.createTemplateFromFile('Index');
   var webAppUrl = '';
   try { webAppUrl = getWebAppUrl_(); } catch (err) {}
   if (!webAppUrl) {
     try { webAppUrl = ScriptApp.getService().getUrl() || ''; } catch (err2) {}
   }
+  webAppUrl = String(webAppUrl || '').replace(/\/macros\/u\/\d+\//, '/macros/');
   var branding = { orgName: ORG_NAME, slogan: ORG_SLOGAN_DEFAULT, logoDataUrl: '' };
   try { branding = getBranding_(); } catch (err3) {
     try { branding.logoDataUrl = getDefaultLogoDataUrl_(); } catch (err4) {}
