@@ -57,8 +57,49 @@ jobs:
           CLASP_DEPLOYMENT_ID: ${{ secrets.CLASP_DEPLOYMENT_ID }}
           SHA: ${{ github.sha }}
         run: |
-          if [ -z "$CLASP_DEPLOYMENT_ID" ]; then
-            echo "Missing secret CLASP_DEPLOYMENT_ID. See docs/CI.md"
-            exit 1
+          set -euo pipefail
+          DESC="github-${SHA:0:7}"
+
+          deploy_with_id() {
+            local id="$1"
+            echo "Deploying to $id ..."
+            clasp deploy -i "$id" -d "$DESC"
+          }
+
+          # 1) Prefer the GitHub secret (stable /exec URL)
+          if [ -n "${CLASP_DEPLOYMENT_ID:-}" ]; then
+            if deploy_with_id "$CLASP_DEPLOYMENT_ID"; then
+              echo "Updated deployment from CLASP_DEPLOYMENT_ID secret."
+              exit 0
+            fi
+            echo "::warning::CLASP_DEPLOYMENT_ID was rejected (deleted or wrong). Resolving from project deployments..."
+          else
+            echo "::warning::CLASP_DEPLOYMENT_ID secret is empty. Resolving from project deployments..."
           fi
-          clasp deploy -i "$CLASP_DEPLOYMENT_ID" -d "github-${SHA:0:7}"
+
+          # 2) Fall back to an existing deployment on the script project
+          echo "Current deployments:"
+          clasp deployments || true
+
+          # clasp deployments lines look like: "- AKfycb... - Description"
+          RESOLVED="$(clasp deployments 2>/dev/null | grep -oE 'AKfycb[A-Za-z0-9_-]+' | head -n 1 || true)"
+          if [ -n "$RESOLVED" ]; then
+            if deploy_with_id "$RESOLVED"; then
+              echo "::warning::Deployed using resolved ID $RESOLVED"
+              echo "::warning::Update GitHub secret CLASP_DEPLOYMENT_ID to this value so /exec stays stable."
+              exit 0
+            fi
+          fi
+
+          # 3) Last resort: create a new versioned deployment (may mint a NEW /exec URL)
+          echo "::warning::No usable deployment ID — creating a new deployment (URL may change)."
+          OUT="$(clasp deploy -d "$DESC")"
+          echo "$OUT"
+          NEW_ID="$(echo "$OUT" | grep -oE 'AKfycb[A-Za-z0-9_-]+' | head -n 1 || true)"
+          if [ -n "$NEW_ID" ]; then
+            echo "::warning::Created deployment $NEW_ID — set GitHub secret CLASP_DEPLOYMENT_ID to this and update bookmarks."
+            exit 0
+          fi
+
+          echo "::error::clasp deploy failed. Open Apps Script → Deploy → Manage deployments, copy Deployment ID, set secret CLASP_DEPLOYMENT_ID. See docs/CI.md"
+          exit 1

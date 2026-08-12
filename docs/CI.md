@@ -99,6 +99,7 @@ clasp deploy -i YOUR_DEPLOYMENT_ID -d "manual"
 |---------|-----|
 | `Invalid credentials` / login errors | Re-run `clasp login`, update `CLASPRC_JSON` secret |
 | `Script ID not found` / 404 | Check `CLASP_SCRIPT_ID`; API must be On for group account |
+| `Requested entity was not found` on deploy | Deployment ID is wrong or deleted. Apps Script → **Deploy → Manage deployments** → copy **Deployment ID** → update GitHub secret `CLASP_DEPLOYMENT_ID` → re-run Actions |
 | Push works but `/exec` looks old | Check `CLASP_DEPLOYMENT_ID` matches Manage deployments |
 | Permission denied | `clasprc` must be from the **group Gmail** that owns the script |
 
