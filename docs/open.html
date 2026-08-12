@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open Nazarene for she Organisation Workflow</title>
+  <style>
+    :root {
+      --brand: #5e2063;
+      --ink: #1a121c;
+      --paper: #faf7fb;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Georgia, "Times New Roman", serif;
+      background: radial-gradient(800px 400px at 10% 0%, rgba(94,32,99,.16), transparent 60%), var(--paper);
+      color: var(--ink);
+      padding: 1.5rem;
+    }
+    .card {
+      width: min(440px, 100%);
+      background: #fff;
+      border: 1px solid #e4d6ea;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 18px 40px rgba(60, 20, 70, 0.1);
+      text-align: center;
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    p { color: #6a5b6e; line-height: 1.45; }
+    .btn {
+      display: inline-block;
+      margin-top: 0.75rem;
+      background: var(--brand);
+      color: #fff;
+      text-decoration: none;
+      font-family: system-ui, sans-serif;
+      font-weight: 600;
+      padding: 0.75rem 1.1rem;
+      border-radius: 10px;
+    }
+    .btn.secondary {
+      background: #fff;
+      color: var(--brand);
+      border: 1px solid #e4d6ea;
+      margin-left: 0.35rem;
+    }
+    small { display: block; margin-top: 1rem; color: #8a7a90; font-family: system-ui, sans-serif; }
+  </style>
+  <script>
+    // Canonical web app URL — NO /u/0/ or /u/3/ (those break Google multi-login).
+    var EXEC_URL = 'https://script.google.com/macros/s/AKfycbzKCinJMx4fOzdxP40zqclyvqFRvX_f0Dh1JGXIp7VndXeFiajdMDFasCSQDvb9rFFi/exec';
+
+    function cleanExecUrl(url) {
+      return String(url || '').replace(/\/macros\/u\/\d+\//, '/macros/');
+    }
+
+    function chooserUrl(execUrl) {
+      return 'https://accounts.google.com/AccountChooser?continue=' +
+        encodeURIComponent(cleanExecUrl(execUrl)) +
+        '&prompt=select_account';
+    }
+
+    function go(auto) {
+      var exec = cleanExecUrl(EXEC_URL);
+      var target = chooserUrl(exec);
+      if (auto) {
+        window.location.replace(target);
+      } else {
+        window.location.href = target;
+      }
+    }
+
+    function goDirect() {
+      window.location.href = cleanExecUrl(EXEC_URL);
+    }
+
+    // Auto-open account chooser → clean /exec (works for personal + group).
+    window.addEventListener('DOMContentLoaded', function () {
+      document.getElementById('openBtn').href = chooserUrl(EXEC_URL);
+      document.getElementById('directBtn').href = cleanExecUrl(EXEC_URL);
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('auto') !== '0') {
+        setTimeout(function () { go(true); }, 600);
+      }
+    });
+  </script>
+</head>
+<body>
+  <div class="card">
+    <h1>Nazarene for she Organisation</h1>
+    <p>She empowered, Community inspired.</p>
+    <p>Opening the document workflow… Choose your <strong>personal</strong> or <strong>group</strong> Google account when asked.</p>
+    <p>
+      <a class="btn" id="openBtn" href="#">Choose account &amp; open</a>
+      <a class="btn secondary" id="directBtn" href="#">Open directly</a>
+    </p>
+    <small>Bookmark this page. Do not bookmark URLs that contain <code>/u/0/</code> or <code>/u/3/</code>.</small>
+  </div>
+</body>
+</html>
