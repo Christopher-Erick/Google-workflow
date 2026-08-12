@@ -370,14 +370,57 @@
   }
   function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
 
+  function formatUserChip(ctx) {
+    ctx = ctx || {};
+    var roleLabels = {
+      admin: 'Admin',
+      chair: 'Chair',
+      vice_chair: 'Vice Chair',
+      secretary: 'Secretary',
+      assistant_secretary: 'Assistant Secretary',
+      patron: 'Patron',
+      treasurer: 'Treasurer',
+      members: 'Member'
+    };
+    var seen = {};
+    var roles = [];
+    (ctx.roles || []).forEach(function (r) {
+      if (!r || seen[r]) return;
+      seen[r] = true;
+      roles.push(r);
+    });
+    // isAdmin is derived from admin role — do not append a second "admin"
+    var labelText = roles.map(function (r) {
+      return roleLabels[r] || r;
+    }).join(', ');
+    return (ctx.email || 'Unknown user') + (labelText ? ' · ' + labelText : '');
+  }
+
+  function switchAccount() {
+    run('apiLogoutSession')
+      .catch(function () { /* still show login form */ })
+      .then(function () {
+        showAuthBanner(
+          'Signed out. Enter the roster Gmail you want to use and request a login code.',
+          (state.bootstrap && state.bootstrap.setup && state.bootstrap.setup.accountChooserUrl) ||
+            (typeof INITIAL !== 'undefined' && INITIAL && INITIAL.accountChooserUrl) ||
+            ''
+        );
+        $('navTabs').hidden = true;
+        $('viewLoading').innerHTML =
+          '<p class="lede">Use the login form above to continue as a different person. Do not use Google’s account switcher here — it often causes the Drive error.</p>';
+        showView('loading');
+        $('userChip').textContent = 'Signed out';
+        if ($('loginEmail')) $('loginEmail').focus();
+      });
+  }
+
   function applyBootstrap(data) {
     state.bootstrap = data;
     state.items = data.items || [];
     var ctx = data.context || {};
     applyBranding(data.branding || (data.setup && data.setup.branding));
-    $('userChip').textContent = (ctx.email || 'Unknown user') +
-      (ctx.roles && ctx.roles.length ? ' · ' + ctx.roles.join(', ') : '') +
-      (ctx.isAdmin ? ' · admin' : '');
+    $('userChip').textContent = formatUserChip(ctx);
 
     $('navTabs').hidden = false;
     var setup = data.setup || {};
@@ -403,7 +446,6 @@
       if (INITIAL.accountChooserUrl) {
         if ($('accountChooserLink')) $('accountChooserLink').href = INITIAL.accountChooserUrl;
         if ($('btnChooseAccount')) $('btnChooseAccount').href = INITIAL.accountChooserUrl;
-        if ($('btnSwitchAccount')) $('btnSwitchAccount').href = INITIAL.accountChooserUrl;
       }
     }
 
@@ -413,7 +455,6 @@
         if (pub && pub.accountChooserUrl) {
           if ($('accountChooserLink')) $('accountChooserLink').href = pub.accountChooserUrl;
           if ($('btnChooseAccount')) $('btnChooseAccount').href = pub.accountChooserUrl;
-          if ($('btnSwitchAccount')) $('btnSwitchAccount').href = pub.accountChooserUrl;
         }
         return run('apiGetBootstrap');
       })
@@ -465,6 +506,11 @@
       .catch(function (err) {
         setMsg($('loginMsg'), err.message || String(err), false);
       });
+  });
+
+  $('btnSwitchAccount').addEventListener('click', function (e) {
+    e.preventDefault();
+    switchAccount();
   });
 
   $('btnRetryAuth').addEventListener('click', function () {
