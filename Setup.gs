@@ -14,10 +14,10 @@ function runInitialSetup() {
 
 function saveRoles_(payload) {
   var ctx = getUserContext_();
-  // First-time setup: allow whoever is deploying (group account / secretary)
+  // First-time setup: allow whoever is deploying (group account). After that, Admin only.
   var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
   if (setupDone && !ctx.isAdmin) {
-    throw new Error('Only admin/secretary can update roles after setup.');
+    throw new Error('Only the Admin can update roles after setup. Secretary cannot change Setup.');
   }
 
   ensureDb_();
@@ -33,6 +33,18 @@ function saveRoles_(payload) {
   var now = nowIso_();
   var rolesPayload = payload.roles || {};
 
+  var adminEmail = String((rolesPayload.admin && rolesPayload.admin.email) || '').trim().toLowerCase();
+  var secretaryEmail = String((rolesPayload.secretary && rolesPayload.secretary.email) || '').trim().toLowerCase();
+  if (!adminEmail) {
+    throw new Error('Admin email is required. Admin and Secretary are separate roles — do not leave Admin blank.');
+  }
+  if (!secretaryEmail) {
+    throw new Error('Secretary email is required.');
+  }
+  if (adminEmail === secretaryEmail) {
+    throw new Error('Admin and Secretary must be different people (different email addresses).');
+  }
+
   ROLES.forEach(function (role) {
     var entry = rolesPayload[role] || {};
     var email = String(entry.email || '').trim();
@@ -42,18 +54,6 @@ function saveRoles_(payload) {
     }
     sheet.appendRow([role, email, whatsapp, now]);
   });
-
-  // Default admin = secretary if admin blank
-  var roleMap = getRoleMap_();
-  if (!roleMap.admin.email && roleMap.secretary.email) {
-    // update admin row
-    var rows = sheetToObjects_(sheet);
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].role === 'admin') {
-        sheet.getRange(rows[i]._row, 2).setValue(roleMap.secretary.email);
-      }
-    }
-  }
 
   if (payload.webAppUrl) {
     getScriptProps_().setProperty(PROP.WEB_APP_URL, String(payload.webAppUrl).trim());

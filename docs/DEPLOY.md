@@ -67,7 +67,7 @@ Personal Gmail users (Chair, Patron, etc.) only open the web link and approve. Y
 
 1. Open the Web app URL (group Gmail or Secretary)
 2. Click **Create Drive folders & database**
-3. Enter role emails (and optional WhatsApp numbers for a future release)
+3. Enter **separate** emails for Admin and Secretary (required — different people), plus other role emails (optional WhatsApp for a future release)
 4. Paste the Web app URL into the setup field
 5. **Save roles & finish setup**
 

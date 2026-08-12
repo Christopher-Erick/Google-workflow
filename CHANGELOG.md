@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Admin and Secretary are separate roles:** Admin alone has overlay powers (setup, force-approve, skip). Secretary no longer inherits Admin. Setup rejects identical Admin/Secretary emails.
+
 ## [1.0.0] — 2026-08-12
 
 ### Added

@@ -2,7 +2,7 @@
 
 Sequential document approval system for the Church of the Nazarene **SHE** organisation.
 
-Built on **Google Apps Script**, **Drive**, **Sheets**, and **Gmail**. Officers submit and approve documents in order; members can view status and files; the secretary retains overlay admin control.
+Built on **Google Apps Script**, **Drive**, **Sheets**, and **Gmail**. Officers submit and approve documents in order; members can view status and files. **Admin** (overlay control) and **Secretary** are separate roles held by different people.
 
 ---
 
@@ -15,7 +15,7 @@ Built on **Google Apps Script**, **Drive**, **Sheets**, and **Gmail**. Officers 
 | Drive filing | Named files, Pending / Approved / Declined folders |
 | Notifications | Roster email on status changes; urgent mail to the current approver |
 | Reminders | Daily check; notify if idle ≥ 7 days |
-| Admin controls | Force-approve, skip stage, manage roles |
+| Admin controls | Force-approve, skip stage, manage roles (**Admin role only** — not the Secretary) |
 | Edit safety | Allowed editors only; any replace **resets all approvals** and notifies everyone |
 | Access control | Only emails listed in Setup can use the app |
 

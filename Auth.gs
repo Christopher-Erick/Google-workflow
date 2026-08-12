@@ -41,13 +41,11 @@ function getUserContext_() {
       myRoles.push(role);
     }
   });
-  var isAdmin = myRoles.indexOf('admin') >= 0 || myRoles.indexOf('secretary') >= 0;
-  // Admin role email OR secretary acts as overlay admin per spec
-  if (roles.admin && roles.admin.email === email) isAdmin = true;
-  if (roles.secretary && roles.secretary.email === email) isAdmin = true;
+  // Admin and Secretary are separate people/roles — never conflate them.
+  var isAdmin = !!(roles.admin && roles.admin.email && roles.admin.email === email);
 
   var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
-  var known = myRoles.length > 0 || isAdmin;
+  var known = myRoles.length > 0;
   // Before setup completes, allow the deploying user in
   if (!setupDone) known = true;
 
@@ -67,17 +65,16 @@ function requireKnownUser_() {
     throw new Error('Sign in with your Google account to use this workflow.');
   }
   if (ctx.setupDone && !ctx.isKnownUser) {
-    throw new Error('Your email is not on the SHE workflow roster. Ask the secretary/admin to add you in Setup.');
+    throw new Error('Your email is not on the SHE workflow roster. Ask the Admin to add you in Setup.');
   }
   return ctx;
 }
 
 function userHasRole_(ctx, role) {
-  return ctx.roles.indexOf(role) >= 0 || (role !== 'admin' && ctx.isAdmin && role === 'admin');
+  return ctx.roles.indexOf(role) >= 0;
 }
 
 function canSubmitType_(ctx, typeKey) {
-  if (ctx.isAdmin && typeKey === 'minutes') return true;
   var def = getDocType_(typeKey);
   for (var i = 0; i < def.submitRoles.length; i++) {
     if (ctx.roles.indexOf(def.submitRoles[i]) >= 0) return true;
@@ -86,15 +83,10 @@ function canSubmitType_(ctx, typeKey) {
 }
 
 function canEditItem_(ctx, item) {
-  if (ctx.isAdmin && item.type !== 'requisition') {
-    // Admin/secretary can edit minutes & proof; requisition also needs patron path
-  }
   var def = getDocType_(item.type);
   for (var i = 0; i < def.editRoles.length; i++) {
     if (ctx.roles.indexOf(def.editRoles[i]) >= 0) return true;
   }
-  // Secretary always in editRoles for all types per latest answers for minutes/proof;
-  // requisition includes secretary + patron already.
   return false;
 }
 

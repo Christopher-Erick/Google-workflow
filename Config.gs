@@ -25,10 +25,10 @@ var ROLES = [
 ];
 
 var ROLE_LABELS = {
-  admin: 'Admin (overlay)',
+  admin: 'Admin (overlay — separate person from Secretary)',
   chair: 'Chair',
   vice_chair: 'Vice Chair',
-  secretary: 'Secretary',
+  secretary: 'Secretary (not Admin)',
   assistant_secretary: 'Assistant Secretary',
   patron: 'Patron',
   treasurer: 'Treasurer',

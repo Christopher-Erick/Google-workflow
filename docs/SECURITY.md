@@ -5,7 +5,8 @@
 | Actor | Trust |
 |-------|--------|
 | Group Gmail (script owner) | Full Drive/Sheets/Gmail power for the workflow |
-| Secretary / Admin email | Overlay admin in-app (force-approve, skip, setup) |
+| **Admin** (separate email from Secretary) | Overlay admin in-app: force-approve, skip stage, manage Setup/roles |
+| **Secretary** | Submit/edit per document rules; minutes first stage — **not** Admin |
 | Stage officers | Approve/decline only on their stage; limited edit rights by type |
 | Members | View status and open Drive links only |
 | Anyone not on roster | Rejected after setup (`requireKnownUser_`) |
