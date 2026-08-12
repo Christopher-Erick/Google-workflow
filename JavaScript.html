@@ -134,7 +134,7 @@
         '<div class="field"><label>Email</label>' +
         '<input data-role="' + role + '" data-field="email" type="email" value="' + escapeAttr(entry.email || '') + '" /></div>' +
         '<div class="field"><label>WhatsApp (with country code)</label>' +
-        '<input data-role="' + role + '" data-field="whatsapp" type="text" value="' + escapeAttr(entry.whatsapp || '') + '" placeholder="+2547…" /></div>';
+        '<input data-role="' + role + '" data-field="whatsapp" type="text" value="' + escapeAttr(entry.whatsapp || '') + '" placeholder="+2547..." /></div>';
       form.appendChild(card);
     });
 
@@ -147,6 +147,7 @@
       $('accountChooserLink').href = setup.accountChooserUrl;
     }
   }
+  window.renderSetupForm = renderSetupForm;
 
   function renderMembers(members) {
     var root = $('membersList');
@@ -364,7 +365,7 @@
   }
 
   function doDelete(id, title) {
-    if (!confirm('Delete “‘ + (title || id) + '”? This removes it from the workflow and trashes the Drive file.')) {
+    if (!confirm('Delete "' + (title || id) + '"? This removes it from the workflow and trashes the Drive file.')) {
       return;
     }
     $('detailDialog').close();
