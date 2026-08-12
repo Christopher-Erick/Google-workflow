@@ -101,6 +101,7 @@ function sendWhatsAppWebhook_(template, phone, text) {
 }
 
 function statusLabel_(item) {
+  if (item.status === ITEM_STATUS.ARCHIVED) return 'Archived (Admin/Secretary only)';
   if (item.status === ITEM_STATUS.APPROVED) return 'Fully approved';
   if (item.status === ITEM_STATUS.DECLINED) {
     return 'Declined' + (item.declined_by ? ' by ' + item.declined_by : '');
@@ -113,6 +114,9 @@ function statusLabel_(item) {
 function stageProgressText_(item) {
   var def = getDocType_(item.type);
   var idx = Number(item.current_stage_index);
+  if (item.status === ITEM_STATUS.ARCHIVED) {
+    return def.label + ': archived in workflow (Drive file unchanged)';
+  }
   if (item.status === ITEM_STATUS.APPROVED) {
     return def.label + ': all stages approved';
   }

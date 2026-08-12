@@ -130,7 +130,7 @@
         <div class="dash-head">
           <div>
             <h2>Approvals</h2>
-            <p class="lede">Live status for requisitions, minutes, and proof of payment.</p>
+            <p class="lede">Live status for requisitions, minutes, and proof of payment. Admin can archive approved items (Drive files stay put; only Admin &amp; Secretary still see archived tiles).</p>
           </div>
           <div class="filters">
             <select id="filterType">
@@ -144,6 +144,7 @@
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="declined">Declined</option>
+              <option value="archived">Archived</option>
             </select>
             <button type="button" class="btn secondary" id="btnRefresh">Refresh</button>
           </div>

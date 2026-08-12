@@ -83,7 +83,7 @@ function apiRequestLoginCode(email) {
 function apiVerifyLoginCode(email, code) {
   return withError_(function () {
     var ctx = verifyLoginCode_(email, code);
-    // Return bootstrap in the same call so the client never hangs on a second Drive probe
+    // Skip items on verify so login stays fast; client refreshes the list after
     return {
       context: {
         email: ctx.email,
@@ -91,7 +91,7 @@ function apiVerifyLoginCode(email, code) {
         isAdmin: ctx.isAdmin,
         setupDone: ctx.setupDone
       },
-      bootstrap: buildBootstrapPayload_(ctx)
+      bootstrap: buildBootstrapPayload_({ skipItems: true })
     };
   });
 }
@@ -119,9 +119,9 @@ function apiResetStaleLinks() {
   });
 }
 
-function buildBootstrapPayload_(ctx) {
+function buildBootstrapPayload_(opt) {
   // Always reload roles from the DB for the current OTP session
-  ctx = getUserContext_();
+  var ctx = getUserContext_();
   var setup = getSetupState_();
   setup.context = {
     email: ctx.email,
@@ -129,7 +129,8 @@ function buildBootstrapPayload_(ctx) {
     isAdmin: ctx.isAdmin
   };
   var items = [];
-  if (setup.setupDone) {
+  var includeItems = !(opt && opt.skipItems);
+  if (setup.setupDone && includeItems) {
     try {
       items = listEnrichedItems_({});
     } catch (eItems) {
@@ -158,8 +159,8 @@ function buildBootstrapPayload_(ctx) {
 
 function apiGetBootstrap() {
   return withError_(function () {
-    var ctx = requireKnownUser_();
-    return buildBootstrapPayload_(ctx);
+    requireKnownUser_();
+    return buildBootstrapPayload_({});
   });
 }
 
@@ -202,6 +203,18 @@ function apiDecline(itemId, note) {
 function apiDeleteItem(itemId) {
   return withError_(function () {
     return deleteItem_(itemId);
+  });
+}
+
+function apiArchiveItem(itemId) {
+  return withError_(function () {
+    return { item: archiveItem_(itemId) };
+  });
+}
+
+function apiUnarchiveItem(itemId) {
+  return withError_(function () {
+    return { item: unarchiveItem_(itemId) };
   });
 }
 

@@ -14,7 +14,7 @@
     var timeoutMs = 45000;
     if (args.length && typeof args[args.length - 1] === 'object' && args[args.length - 1] && args[args.length - 1].__timeoutMs) {
       timeoutMs = args.pop().__timeoutMs;
-    } else if (fnName === 'apiSaveRoles' || fnName === 'apiRunInitialSetup') {
+    } else if (fnName === 'apiSaveRoles' || fnName === 'apiRunInitialSetup' || fnName === 'apiVerifyLoginCode') {
       timeoutMs = 90000;
     }
     return new Promise(function (resolve, reject) {
@@ -308,6 +308,12 @@
       actions.appendChild(actionBtn('Force approve stage', 'secondary', function () { doForce(item.id); }));
       actions.appendChild(actionBtn('Skip stage', 'secondary', function () { doSkip(item.id); }));
     }
+    if (p.canArchive) {
+      actions.appendChild(actionBtn('Archive (hide from most users)', 'secondary', function () { doArchive(item.id, item.title); }));
+    }
+    if (p.canUnarchive) {
+      actions.appendChild(actionBtn('Unarchive', 'secondary', function () { doUnarchive(item.id); }));
+    }
     if (p.canDelete) {
       actions.appendChild(actionBtn('Delete document', 'danger', function () { doDelete(item.id, item.title); }));
     }
@@ -376,6 +382,27 @@
     }
     $('detailDialog').close();
     run('apiDeleteItem', id)
+      .then(refreshItems)
+      .catch(showError);
+  }
+
+  function doArchive(id, title) {
+    if (!confirm(
+      'Archive "' + (title || id) + '"?\n\n' +
+      'It will disappear from most users\' dashboards. Only Admin and Secretary can still see it (Secretary view-only).\n' +
+      'The Drive file is NOT moved or changed.'
+    )) {
+      return;
+    }
+    $('detailDialog').close();
+    run('apiArchiveItem', id)
+      .then(refreshItems)
+      .catch(showError);
+  }
+
+  function doUnarchive(id) {
+    $('detailDialog').close();
+    run('apiUnarchiveItem', id)
       .then(refreshItems)
       .catch(showError);
   }
@@ -470,6 +497,10 @@
     if ($('tabSetup')) $('tabSetup').hidden = !ctx.isAdmin;
     showView('dashboard');
     renderItems();
+    // Login bootstrap may skip items for speed — load the list next
+    if (setup.setupDone) {
+      refreshItems().catch(function () { /* keep empty list */ });
+    }
   }
   window.applyBootstrap = applyBootstrap;
   window.hideAuthBanner = hideAuthBanner;

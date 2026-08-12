@@ -80,7 +80,8 @@ var DOC_TYPES = {
 var ITEM_STATUS = {
   PENDING: 'pending',
   APPROVED: 'approved',
-  DECLINED: 'declined'
+  DECLINED: 'declined',
+  ARCHIVED: 'archived'
 };
 
 var REMINDER_DAYS = 7;

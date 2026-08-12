@@ -282,6 +282,91 @@ function deleteItem_(itemId) {
   return { deleted: true, id: itemId };
 }
 
+function isSecretary_(ctx) {
+  return !!(ctx && ctx.roles && ctx.roles.indexOf('secretary') >= 0);
+}
+
+function canSeeArchivedItems_(ctx) {
+  return !!(ctx && (ctx.isAdmin || isSecretary_(ctx)));
+}
+
+/**
+ * Archive an approved workflow tile. Drive file location/sharing is NOT changed.
+ * After archive, only Admin and Secretary can see the tile (Secretary view-only).
+ */
+function archiveItem_(itemId) {
+  requireSetup_();
+  var ctx = requireKnownUser_();
+  if (!ctx.isAdmin) throw new Error('Only Admin can archive documents.');
+  var item = findById_(SHEETS.ITEMS, itemId);
+  if (!item) throw new Error('Item not found.');
+  if (item.status !== ITEM_STATUS.APPROVED) {
+    throw new Error('Only fully approved documents can be archived.');
+  }
+  var now = nowIso_();
+  var actorName = displayNameForEmail_(ctx.email, ctx.roleMap);
+  updateRowById_(SHEETS.ITEMS, item.id, {
+    status: ITEM_STATUS.ARCHIVED,
+    updated_at: now,
+    last_action_at: now
+  });
+  appendRow_(SHEETS.APPROVALS, {
+    id: newId_('apr'),
+    item_id: item.id,
+    stage_role: '',
+    stage_index: -1,
+    action: 'archived',
+    actor_email: ctx.email,
+    actor_name: actorName,
+    note: 'Archived in workflow only — Drive file was not moved or changed.',
+    timestamp: now
+  });
+  audit_(item.id, 'archived', ctx.email, {
+    title: item.title,
+    by: actorName,
+    driveUnchanged: true
+  });
+  return enrichItem_(findById_(SHEETS.ITEMS, item.id), ctx);
+}
+
+/**
+ * Restore archived tile back to approved (still no Drive changes).
+ */
+function unarchiveItem_(itemId) {
+  requireSetup_();
+  var ctx = requireKnownUser_();
+  if (!ctx.isAdmin) throw new Error('Only Admin can unarchive documents.');
+  var item = findById_(SHEETS.ITEMS, itemId);
+  if (!item) throw new Error('Item not found.');
+  if (item.status !== ITEM_STATUS.ARCHIVED) {
+    throw new Error('Only archived documents can be unarchived.');
+  }
+  var now = nowIso_();
+  var actorName = displayNameForEmail_(ctx.email, ctx.roleMap);
+  updateRowById_(SHEETS.ITEMS, item.id, {
+    status: ITEM_STATUS.APPROVED,
+    updated_at: now,
+    last_action_at: now
+  });
+  appendRow_(SHEETS.APPROVALS, {
+    id: newId_('apr'),
+    item_id: item.id,
+    stage_role: '',
+    stage_index: -1,
+    action: 'unarchived',
+    actor_email: ctx.email,
+    actor_name: actorName,
+    note: 'Restored to approved in workflow — Drive file was not moved or changed.',
+    timestamp: now
+  });
+  audit_(item.id, 'unarchived', ctx.email, {
+    title: item.title,
+    by: actorName,
+    driveUnchanged: true
+  });
+  return enrichItem_(findById_(SHEETS.ITEMS, item.id), ctx);
+}
+
 function editReplaceFile_(itemId, payload) {
   requireSetup_();
   var ctx = requireKnownUser_();
@@ -435,6 +520,8 @@ function enrichItem_(item, ctx) {
   });
   var submitterName = displayNameForEmail_(item.submitter_email, roleMap);
   var declinedByName = item.declined_by ? displayNameForEmail_(item.declined_by, roleMap) : '';
+  var isArchived = item.status === ITEM_STATUS.ARCHIVED;
+  var canSee = !isArchived || canSeeArchivedItems_(ctx);
   return {
     id: item.id,
     type: item.type,
@@ -468,13 +555,15 @@ function enrichItem_(item, ctx) {
     version: item.version,
     approvals: approvals,
     permissions: {
-      canApprove: !!(item.current_stage_role && ctx.roles.indexOf(item.current_stage_role) >= 0) && item.status === ITEM_STATUS.PENDING,
-      canDecline: canActOnCurrentStage_(ctx, item),
-      canEdit: canEditItem_(ctx, item) && item.status !== ITEM_STATUS.APPROVED,
-      canReopen: item.status === ITEM_STATUS.DECLINED && (ctx.isAdmin || ctx.email === String(item.submitter_email).toLowerCase()),
-      canForce: ctx.isAdmin && item.status === ITEM_STATUS.PENDING,
+      canApprove: !isArchived && !!(item.current_stage_role && ctx.roles.indexOf(item.current_stage_role) >= 0) && item.status === ITEM_STATUS.PENDING,
+      canDecline: !isArchived && canActOnCurrentStage_(ctx, item),
+      canEdit: !isArchived && canEditItem_(ctx, item) && item.status !== ITEM_STATUS.APPROVED,
+      canReopen: !isArchived && item.status === ITEM_STATUS.DECLINED && (ctx.isAdmin || ctx.email === String(item.submitter_email).toLowerCase()),
+      canForce: !isArchived && ctx.isAdmin && item.status === ITEM_STATUS.PENDING,
       canDelete: ctx.isAdmin,
-      canView: true
+      canArchive: ctx.isAdmin && item.status === ITEM_STATUS.APPROVED,
+      canUnarchive: ctx.isAdmin && item.status === ITEM_STATUS.ARCHIVED,
+      canView: canSee
     }
   };
 }
@@ -489,6 +578,11 @@ function listEnrichedItems_(filter) {
   if (filter && filter.status) {
     items = items.filter(function (i) { return i.status === filter.status; });
   }
+  // Archived tiles: Admin + Secretary only (Secretary is view-only via permissions)
+  items = items.filter(function (i) {
+    if (i.status === ITEM_STATUS.ARCHIVED) return canSeeArchivedItems_(ctx);
+    return true;
+  });
   // Newest first
   items.sort(function (a, b) {
     return String(b.created_at).localeCompare(String(a.created_at));
