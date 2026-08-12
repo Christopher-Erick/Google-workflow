@@ -1,0 +1,64 @@
+name: Deploy Apps Script
+
+# Push to master → update Apps Script project + refresh the live web app deployment.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: clasp-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: clasp push + deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install clasp
+        run: npm install --global @google/clasp@2.4.2
+
+      - name: Write clasp credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "Missing secret CLASPRC_JSON. See docs/CI.md"
+            exit 1
+          fi
+          echo "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+
+      - name: Write .clasp.json
+        env:
+          CLASP_SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASP_SCRIPT_ID" ]; then
+            echo "Missing secret CLASP_SCRIPT_ID. See docs/CI.md"
+            exit 1
+          fi
+          printf '%s\n' "{\"scriptId\":\"${CLASP_SCRIPT_ID}\",\"rootDir\":\".\"}" > .clasp.json
+
+      - name: Push sources to Apps Script
+        run: clasp push --force
+
+      - name: Update live web app deployment
+        env:
+          CLASP_DEPLOYMENT_ID: ${{ secrets.CLASP_DEPLOYMENT_ID }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$CLASP_DEPLOYMENT_ID" ]; then
+            echo "Missing secret CLASP_DEPLOYMENT_ID. See docs/CI.md"
+            exit 1
+          fi
+          clasp deploy -i "$CLASP_DEPLOYMENT_ID" -d "github-${SHA:0:7}"

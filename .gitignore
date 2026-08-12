@@ -1,4 +1,3 @@
-.clasp.json
 .clasprc.json
 node_modules/
 .DS_Store
@@ -14,3 +13,6 @@ token.json
 .vscode/
 *.swp
 *~
+# Local clasp binding may contain scriptId — prefer GitHub secrets in CI.
+# Commit .clasp.json only if you intentionally want scriptId in the repo.
+.clasp.json

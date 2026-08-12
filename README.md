@@ -79,6 +79,8 @@ If the submitter holds the first-stage role, that stage is **auto-approved** on 
 
 Optional: use [clasp](https://github.com/google/clasp) with `.clasp.json.example` for push/pull instead of manual paste.
 
+**Auto-deploy:** pushes to `master` can update Apps Script automatically — see **[docs/CI.md](docs/CI.md)**.
+
 ---
 
 ## Requirements

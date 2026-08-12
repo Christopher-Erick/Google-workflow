@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Actions + clasp continuous deploy (`docs/CI.md`) so pushes to `master` update Apps Script and the live web app deployment
+
 ### Changed
 
 - **Admin and Secretary are separate roles:** Admin alone has overlay powers (setup, force-approve, skip). Secretary no longer inherits Admin. Setup rejects identical Admin/Secretary emails.
