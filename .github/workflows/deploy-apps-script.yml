@@ -50,14 +50,22 @@ jobs:
           printf '%s\n' "{\"scriptId\":\"${CLASP_SCRIPT_ID}\",\"rootDir\":\".\"}" > .clasp.json
 
       - name: Push sources to Apps Script
-        run: clasp push --force
+        run: |
+          set -euo pipefail
+          if ! clasp push --force; then
+            echo "::error::clasp push failed (Requested entity was not found usually means CLASP_SCRIPT_ID is wrong/deleted, or CLASPRC_JSON is for a different Google account)."
+            echo "::error::Fix: open script.google.com → your project → Project Settings → copy Script ID → update GitHub secret CLASP_SCRIPT_ID."
+            echo "::error::Also Deploy → Manage deployments → copy Deployment ID → update CLASP_DEPLOYMENT_ID."
+            echo "::error::If needed, run 'clasp login' as the group Gmail and refresh CLASPRC_JSON. See docs/CI.md"
+            exit 1
+          fi
 
       - name: Update live web app deployment
         env:
           CLASP_DEPLOYMENT_ID: ${{ secrets.CLASP_DEPLOYMENT_ID }}
           SHA: ${{ github.sha }}
         run: |
-          set -euo pipefail
+          set +e
           DESC="github-${SHA:0:7}"
 
           deploy_with_id() {
@@ -79,10 +87,8 @@ jobs:
 
           # 2) Fall back to an existing deployment on the script project
           echo "Current deployments:"
-          clasp deployments || true
-
-          # clasp deployments lines look like: "- AKfycb... - Description"
-          RESOLVED="$(clasp deployments 2>/dev/null | grep -oE 'AKfycb[A-Za-z0-9_-]+' | head -n 1 || true)"
+          clasp deployments
+          RESOLVED="$(clasp deployments 2>/dev/null | grep -oE 'AKfycb[A-Za-z0-9_-]+' | head -n 1)"
           if [ -n "$RESOLVED" ]; then
             if deploy_with_id "$RESOLVED"; then
               echo "::warning::Deployed using resolved ID $RESOLVED"
@@ -94,12 +100,15 @@ jobs:
           # 3) Last resort: create a new versioned deployment (may mint a NEW /exec URL)
           echo "::warning::No usable deployment ID — creating a new deployment (URL may change)."
           OUT="$(clasp deploy -d "$DESC")"
+          EC=$?
           echo "$OUT"
-          NEW_ID="$(echo "$OUT" | grep -oE 'AKfycb[A-Za-z0-9_-]+' | head -n 1 || true)"
+          if [ $EC -ne 0 ]; then
+            echo "::error::clasp deploy failed. Update CLASP_SCRIPT_ID + CLASP_DEPLOYMENT_ID from the live Apps Script project (group Gmail). See docs/CI.md"
+            exit 1
+          fi
+          NEW_ID="$(echo "$OUT" | grep -oE 'AKfycb[A-Za-z0-9_-]+' | head -n 1)"
           if [ -n "$NEW_ID" ]; then
             echo "::warning::Created deployment $NEW_ID — set GitHub secret CLASP_DEPLOYMENT_ID to this and update bookmarks."
             exit 0
           fi
-
-          echo "::error::clasp deploy failed. Open Apps Script → Deploy → Manage deployments, copy Deployment ID, set secret CLASP_DEPLOYMENT_ID. See docs/CI.md"
-          exit 1
+          exit 0
