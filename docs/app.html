@@ -6,29 +6,17 @@
   <title>Nazarene for she Organisation — Workflow</title>
   <style>
     html, body { margin: 0; height: 100%; background: #3f1344; }
-    iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
     .bar {
       position: fixed; left: 0; right: 0; top: 0; z-index: 2;
-      display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; justify-content: space-between;
-      padding: 0.45rem 0.75rem;
-      background: rgba(63, 19, 68, 0.92); color: #fff;
+      display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      padding: 0.5rem 0.75rem; background: rgba(63, 19, 68, 0.94); color: #fff;
       font-family: system-ui, sans-serif; font-size: 0.85rem;
     }
     .bar a { color: #ffd9ff; }
-    .frame-wrap { position: fixed; left: 0; right: 0; top: 40px; bottom: 0; }
-    .frame-wrap iframe { position: absolute; inset: 0; }
-    .msg {
-      position: fixed; inset: 40px 0 0; display: none; place-items: center;
-      background: #faf7fb; color: #1a121c; font-family: system-ui, sans-serif; padding: 1.5rem; text-align: center;
-    }
-    .msg.show { display: grid; }
-    .btn {
-      display: inline-block; margin-top: 0.75rem; background: #5e2063; color: #fff;
-      text-decoration: none; padding: 0.65rem 1rem; border-radius: 10px; font-weight: 600;
-    }
+    .frame-wrap { position: fixed; left: 0; right: 0; top: 42px; bottom: 0; }
+    iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
   </style>
   <script>
-    // Clean web app URL — never use /macros/u/0/ or /u/3/
     var EXEC_URL = 'https://script.google.com/macros/s/AKfycbyADy_1Hwe2qb6FwGtcc5bOkMvvvp5HxNxeDW7OIp88SG0lrF3Ou5_MGRUGnTJ5TDyL/exec';
 
     function cleanExecUrl(url) {
@@ -37,19 +25,13 @@
 
     window.addEventListener('DOMContentLoaded', function () {
       var exec = cleanExecUrl(EXEC_URL);
-      var frame = document.getElementById('appFrame');
-      var fallback = document.getElementById('fallback');
+      var email = '';
+      try { email = localStorage.getItem('naz_preferred_email') || ''; } catch (e) {}
+      if (email) {
+        exec += (exec.indexOf('?') >= 0 ? '&' : '?') + 'authuser=' + encodeURIComponent(email);
+      }
       document.getElementById('openRaw').href = exec;
-      frame.src = exec;
-
-      // If Google blocks iframe, show fallback actions after a short wait
-      var loaded = false;
-      frame.addEventListener('load', function () { loaded = true; });
-      setTimeout(function () {
-        // Cross-origin: we cannot read frame contents. Keep iframe visible;
-        // user can use "Open without frame" if still broken.
-        fallback.classList.add('show-soft');
-      }, 8000);
+      document.getElementById('appFrame').src = exec;
     });
   </script>
 </head>
@@ -57,19 +39,13 @@
   <div class="bar">
     <span>Nazarene for she Organisation</span>
     <span>
-      <a id="openRaw" href="#" target="_blank" rel="noopener">Open without frame</a>
+      <a id="openRaw" href="#" target="_blank" rel="noopener">Open in new tab</a>
       ·
-      <a href="./open.html?auto=0">Switch Google account</a>
+      <a href="./open.html">Switch account / settings</a>
     </span>
   </div>
   <div class="frame-wrap">
     <iframe id="appFrame" title="SHE Workflow" allow="clipboard-read; clipboard-write"></iframe>
-  </div>
-  <div class="msg" id="fallback">
-    <div>
-      <p>If the workflow is blank or shows a Drive error inside the frame, create a <strong>new</strong> Web app deployment (see ACCESS.md) and update this page.</p>
-      <a class="btn" href="./open.html?auto=0">Choose account again</a>
-    </div>
   </div>
 </body>
 </html>

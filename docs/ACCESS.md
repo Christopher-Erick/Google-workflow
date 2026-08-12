@@ -1,55 +1,40 @@
-# Fix “unable to open the file” for good
+# Access guide (multi-account Chrome)
 
-## Why Account Chooser was not enough
+## What went wrong
 
-After you pick an account, Google often still sends you to:
+1. **HTTP 400** on “Choose account” — Google Account Chooser only accepts a **Google** continue URL. Continuing to `github.io` is rejected as malformed.
+2. **Drive error** on the script link — Chrome rewrites the app to `/macros/u/0/` or `/u/3/` when several Google accounts share one browser profile. That path is broken.
 
-`/macros/u/0/s/.../exec` or `/macros/u/3/s/.../exec`
+## Reliable setup (recommended)
 
-That form is broken for many multi-account browsers. Our launcher now avoids bookmarking that path.
+Create **two Chrome profiles** (or Brave profiles):
 
-## Use these links only
+| Profile name | Sign in with | Use for |
+|--------------|--------------|---------|
+| SHE Admin | Your **personal Admin** Gmail only | Daily admin / approvals |
+| SHE Group | **Group** Gmail only | Drive / script owner tasks |
 
-1. **Choose account:** https://christopher-erick.github.io/Google-workflow/open.html  
-2. **Workflow window:** https://christopher-erick.github.io/Google-workflow/app.html  
+In each profile, bookmark only:
 
-`app.html` loads the script inside a stable page (not a `/u/N/` bookmark).
+`https://script.google.com/macros/s/AKfycbyADy_1Hwe2qb6FwGtcc5bOkMvvvp5HxNxeDW7OIp88SG0lrF3Ou5_MGRUGnTJ5TDyL/exec`
 
----
+One account per profile = no `/u/N/` bug.
 
-## If it STILL shows Drive error — recreate the Web app (required)
+## Launcher pages
 
-Do this while signed into the **group Gmail** (script owner):
+- https://christopher-erick.github.io/Google-workflow/open.html  
+- https://christopher-erick.github.io/Google-workflow/app.html  
 
-### A) Re-authorise the script
-1. [script.google.com](https://script.google.com) → **NAZ SHE Workflow**
-2. Open any `.gs` file → function dropdown → **`runInitialSetup`** → **Run**
-3. Click **Review permissions** → choose **group Gmail** → Advanced → Allow
+Optional: enter your Gmail on `open.html` before opening (helps `authuser=`).
 
-### B) Create a brand-new deployment (do not only “edit” the old one)
-1. **Deploy → New deployment**
-2. Gear → **Web app**
-3. Description: `SHE workflow stable`
-4. **Execute as:** Me  
-5. **Who has access:** Anyone with a Google account  
-6. **Deploy**
-7. Copy the new **Web app URL**  
-   It must look like:  
-   `https://script.google.com/macros/s/AKfycb....../exec`  
-   with **no** `/u/0/` in it.
+## Brave
 
-### C) Send the new URL to update the launcher
-Paste only the new `/exec` URL in chat (or the `AKfycb…` id).  
-We will update `docs/app.html`, `docs/open.html`, and the GitHub secret `CLASP_DEPLOYMENT_ID`.
+Shields **Down** on `script.google.com`.
 
-### D) Brave
-Shields → **Down** for `script.google.com`.
+## Optional: Google Site (org-wide link)
 
----
+1. Group Gmail → [sites.google.com](https://sites.google.com) → New site  
+2. Embed → URL → paste the `/exec` link above  
+3. Publish → share the Site link with members  
 
-## Account roles reminder
-
-| Account | Use |
-|---------|-----|
-| Personal Admin Gmail | Daily Admin work |
-| Group Gmail | Owns Drive; use only when managing the script |
+Members open the **Site** URL instead of `script.google.com`.
