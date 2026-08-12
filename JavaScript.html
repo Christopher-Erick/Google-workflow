@@ -11,15 +11,21 @@
 
   function run(fnName) {
     var args = Array.prototype.slice.call(arguments, 1);
-    var timeoutMs = args.length && typeof args[args.length - 1] === 'object' && args[args.length - 1] && args[args.length - 1].__timeoutMs
-      ? args.pop().__timeoutMs
-      : 28000;
+    var timeoutMs = 45000;
+    if (args.length && typeof args[args.length - 1] === 'object' && args[args.length - 1] && args[args.length - 1].__timeoutMs) {
+      timeoutMs = args.pop().__timeoutMs;
+    } else if (fnName === 'apiSaveRoles' || fnName === 'apiRunInitialSetup') {
+      timeoutMs = 90000;
+    }
     return new Promise(function (resolve, reject) {
       var settled = false;
       var timer = setTimeout(function () {
         if (settled) return;
         settled = true;
-        reject(new Error('Request timed out. If you deleted Drive/DB, open Setup and recreate them.'));
+        reject(new Error(
+          'Request timed out. For Save setup, wait and try again — it updates the existing DB (does not recreate it). ' +
+          'Only use Create Drive folders if the database is missing.'
+        ));
       }, timeoutMs);
       google.script.run
         .withSuccessHandler(function (res) {
@@ -632,7 +638,7 @@
 
     if ($('btnSaveRoles')) {
       $('btnSaveRoles').addEventListener('click', function () {
-        setMsg($('setupMsg'), 'Saving…', true);
+        setMsg($('setupMsg'), 'Saving users into the existing database…', true);
         var payload = {
           roles: collectRoles(),
           members: collectMembers(),
@@ -648,7 +654,7 @@
         }
         run('apiSaveRoles', payload)
           .then(function (res) {
-            setMsg($('setupMsg'), (res && res.message) || 'Saved. Roster & Drive access updated.', true);
+            setMsg($('setupMsg'), (res && res.message) || 'Saved. Existing DB updated.', true);
             state.pendingLogo = null;
             return run('apiGetBootstrap');
           })

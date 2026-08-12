@@ -5,7 +5,7 @@
 function dailyReminderJob() {
   try {
     if (getScriptProps_().getProperty(PROP.SETUP_DONE) !== '1') return;
-    ensureDb_();
+    ensureDb_({ allowCreate: false });
     var items = listItems_().filter(function (i) {
       return i.status === ITEM_STATUS.PENDING;
     });

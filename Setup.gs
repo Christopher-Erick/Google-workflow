@@ -4,7 +4,8 @@
 
 function runInitialSetup() {
   requireAdminOperation_(true);
-  ensureDb_();
+  // Only Create folders is allowed to create the spreadsheet (once)
+  ensureDb_({ allowCreate: true });
   var root = ensureDriveTree_();
   var sync = { rosterCount: 0, removedViewers: 0 };
   try { sync = syncRosterDriveAccess_(); } catch (e) {
@@ -15,14 +16,16 @@ function runInitialSetup() {
     ok: true,
     message:
       'Database and Drive folders ready (Requisition / Minutes / Proof of Payment → Pending, Approved, Declined). ' +
-      'Set Admin to a personal Gmail (not the group inbox), Save, then sign in as that Admin for all Admin work.'
+      'Set Admin to a personal Gmail (not the group inbox), Save, then sign in as that Admin for all Admin work. ' +
+      'Later user updates only edit this same NAZ Workflow DB — they do not create a new one.'
   };
 }
 
 function saveRoles_(payload) {
   var ctx = requireAdminOperation_(true);
 
-  ensureDb_();
+  // Update existing DB only — never recreate on user/role changes
+  ensureDb_({ allowCreate: false });
   ensureDriveTree_();
 
   var sheet = getDb_().getSheetByName(SHEETS.ROLES);
@@ -93,19 +96,21 @@ function saveRoles_(payload) {
   }
 
   getScriptProps_().setProperty(PROP.SETUP_DONE, '1');
-  ensureReminderTrigger_();
-  audit_('', 'roles_saved', ctx.email, { rosterSync: sync });
+  try { ensureReminderTrigger_(); } catch (eTrig) {}
+  try { audit_('', 'roles_saved', ctx.email, { rosterSync: sync }); } catch (eAud) {}
 
   var savedCtx = getUserContext_();
   return {
     ok: true,
     setupDone: true,
     context: savedCtx,
-    branding: getBranding_(),
+    branding: getBrandingLight_(),
     rosterSync: sync,
+    dbSpreadsheetId: getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID) || '',
     message:
-      'Saved. Roster & Drive viewers updated. ' +
-      'For Admin work (Setup, delete, force-approve), Switch account and sign in with the personal Admin Gmail — not the group inbox.'
+      'Saved — existing NAZ Workflow DB updated (not recreated). Drive viewers synced for ' +
+      (sync.rosterCount || 0) +
+      ' people.'
   };
 }
 

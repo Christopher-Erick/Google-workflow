@@ -18,37 +18,88 @@ function clearStaleDbId_() {
 }
 
 /**
- * Open existing DB if the stored id still works. Never creates.
- * Avoid DriveApp.getFileById — it hangs on deleted IDs after a wipe.
+ * Open existing DB if the stored id still works.
+ * Never creates. Never clears SETUP_DONE on a transient open failure.
  */
-function tryOpenDb_() {
+function isMissingDriveFileError_(err) {
+  var msg = String((err && err.message) || err || '').toLowerCase();
+  return (
+    msg.indexOf('not found') >= 0 ||
+    msg.indexOf('no item with the given id') >= 0 ||
+    msg.indexOf('does not exist') >= 0 ||
+    msg.indexOf('trashed') >= 0 ||
+    msg.indexOf('deleted') >= 0
+  );
+}
+
+function findExistingDbSpreadsheet_() {
   var props = getScriptProps_();
   var id = props.getProperty(PROP.DB_SPREADSHEET_ID);
-  if (!id) return null;
-  try {
-    return SpreadsheetApp.openById(id);
-  } catch (e) {
-    clearStaleDbId_();
-    return null;
+  if (id) {
+    try {
+      var ss = SpreadsheetApp.openById(id);
+      return ss;
+    } catch (e) {
+      // Transient errors must NOT create a second NAZ Workflow DB
+      if (!isMissingDriveFileError_(e)) {
+        throw e;
+      }
+    }
   }
+
+  // Recover only when the stored file is truly gone: reuse an existing sheet by name
+  try {
+    var files = DriveApp.getFilesByName(DB_SHEET_NAME);
+    while (files.hasNext()) {
+      var file = files.next();
+      try {
+        if (file.isTrashed()) continue;
+        var found = SpreadsheetApp.openById(file.getId());
+        props.setProperty(PROP.DB_SPREADSHEET_ID, found.getId());
+        return found;
+      } catch (eOpen) {}
+    }
+  } catch (eSearch) {}
+
+  // Stored file is gone and nothing matches the DB name
+  if (id) {
+    props.deleteProperty(PROP.DB_SPREADSHEET_ID);
+  }
+  return null;
+}
+
+function tryOpenDb_() {
+  return findExistingDbSpreadsheet_();
 }
 
 function getDb_() {
   var ss = tryOpenDb_();
-  if (!ss) throw new Error('Database not initialized. Open Setup and click Create Drive folders & database.');
+  if (!ss) {
+    throw new Error('Database not initialized. Open Setup and click Create Drive folders & database.');
+  }
   return ss;
 }
 
 /**
- * Open DB or create a fresh one. Use only from Setup / save / workflow writes.
+ * Open existing DB. Creates a new spreadsheet ONLY when opt.allowCreate === true
+ * (Create Drive folders button). Save / login / reminders never create a new DB.
  */
-function ensureDb_() {
+function ensureDb_(opt) {
+  var allowCreate = !!(opt && opt.allowCreate === true);
   var props = getScriptProps_();
-  var ss = tryOpenDb_();
+  var ss = findExistingDbSpreadsheet_();
   if (!ss) {
+    if (!allowCreate) {
+      throw new Error(
+        'NAZ Workflow DB was not found. Click "Create Drive folders & database" once. ' +
+        'Saving users only updates the existing database — it never creates a new one.'
+      );
+    }
     ss = SpreadsheetApp.create(DB_SHEET_NAME);
     props.setProperty(PROP.DB_SPREADSHEET_ID, ss.getId());
-    props.setProperty(PROP.SETUP_DONE, '0');
+  } else {
+    // Always keep the property pointed at the open workbook
+    props.setProperty(PROP.DB_SPREADSHEET_ID, ss.getId());
   }
   ensureSheet_(ss, SHEETS.ROLES, [
     'role', 'name', 'email', 'whatsapp', 'updated_at'

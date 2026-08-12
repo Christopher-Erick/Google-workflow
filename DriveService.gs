@@ -178,7 +178,7 @@ function listRosterEmailsForSharing_() {
 
 /**
  * Keep Drive viewer access aligned with the current officer/member roster.
- * Called whenever Admin saves Setup — adds new people, removes former ones.
+ * Only shares the root documents folder (fast). Child files inherit access.
  */
 function syncRosterDriveAccess_() {
   var root = ensureDriveTree_();
@@ -191,29 +191,12 @@ function syncRosterDriveAccess_() {
   if (owner) wanted[owner] = true;
 
   var wantedList = Object.keys(wanted);
-  var added = 0;
-
-  function shareOne_(folder) {
-    if (!folder) return;
-    wantedList.forEach(function (email) {
-      try {
-        folder.addViewer(email);
-        added++;
-      } catch (e) {
-        // already has access / invalid / cannot share
-      }
-    });
-  }
-
-  shareOne_(root);
-  ['Requisition', 'Minutes', 'Proof of Payment'].forEach(function (typeName) {
+  wantedList.forEach(function (email) {
     try {
-      var typeFolder = findOrCreateFolder_(root, typeName);
-      shareOne_(typeFolder);
-      ['Pending', 'Approved', 'Declined'].forEach(function (statusName) {
-        shareOne_(findOrCreateFolder_(typeFolder, statusName));
-      });
-    } catch (eType) {}
+      root.addViewer(email);
+    } catch (e) {
+      // already has access / invalid / cannot share
+    }
   });
 
   var removed = 0;
