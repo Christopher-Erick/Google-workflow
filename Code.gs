@@ -5,13 +5,28 @@
 function doGet(e) {
   ensureDb_();
   var template = HtmlService.createTemplateFromFile('Index');
+  var webAppUrl = '';
+  try { webAppUrl = getWebAppUrl_(); } catch (err) {}
+  if (!webAppUrl) {
+    try { webAppUrl = ScriptApp.getService().getUrl() || ''; } catch (err2) {}
+  }
+  var branding = { orgName: ORG_NAME, slogan: ORG_SLOGAN_DEFAULT, logoDataUrl: '' };
+  try { branding = getBranding_(); } catch (err3) {
+    try { branding.logoDataUrl = getDefaultLogoDataUrl_(); } catch (err4) {}
+  }
   template.initial = JSON.stringify({
     appName: APP_NAME,
+    orgName: ORG_NAME,
+    branding: branding,
+    webAppUrl: webAppUrl,
+    accountChooserUrl: webAppUrl
+      ? 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(webAppUrl) + '&prompt=select_account'
+      : '',
     user: safeContext_()
   });
   return template
     .evaluate()
-    .setTitle(APP_NAME)
+    .setTitle(ORG_NAME)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -36,6 +51,27 @@ function safeContext_() {
 }
 
 /** ——— Client API ——— */
+
+/** No auth — used so the page can show logo + account chooser even when sign-in fails */
+function apiGetPublicConfig() {
+  return withError_(function () {
+    var webAppUrl = getWebAppUrl_();
+    if (!webAppUrl) {
+      try { webAppUrl = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+    }
+    var branding = getBranding_();
+    return {
+      appName: APP_NAME,
+      orgName: ORG_NAME,
+      branding: branding,
+      webAppUrl: webAppUrl,
+      accountChooserUrl: webAppUrl
+        ? 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(webAppUrl) + '&prompt=select_account'
+        : '',
+      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1'
+    };
+  });
+}
 
 function apiGetBootstrap() {
   return withError_(function () {

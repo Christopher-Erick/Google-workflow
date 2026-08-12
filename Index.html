@@ -13,7 +13,7 @@
     <div class="bg-wash" aria-hidden="true"></div>
     <header class="topbar">
       <div class="brand">
-        <img id="brandLogo" class="brand-logo" alt="" hidden />
+        <img id="brandLogo" class="brand-logo" alt="Nazarene for She" hidden />
         <span id="brandMark" class="brand-mark" aria-hidden="true"></span>
         <div>
           <p class="brand-eyebrow" id="brandSlogan">She empowered, Community inspired.</p>
@@ -22,6 +22,14 @@
       </div>
       <div class="user-chip" id="userChip">Signing in…</div>
     </header>
+
+    <section id="authBanner" class="auth-banner" hidden>
+      <p id="authBannerText"></p>
+      <div class="actions-row">
+        <a class="btn primary" id="btnChooseAccount" href="#" target="_top">Choose Google account</a>
+        <button type="button" class="btn secondary" id="btnRetryAuth">Try again</button>
+      </div>
+    </section>
 
     <main class="shell">
       <nav class="tabs" id="navTabs" hidden>
@@ -173,6 +181,9 @@
       </form>
     </dialog>
 
+    <script>
+      var INITIAL = <?!= initial ?>;
+    </script>
     <?!= include('JavaScript'); ?>
   </body>
 </html>

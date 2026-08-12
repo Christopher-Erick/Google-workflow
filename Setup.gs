@@ -144,11 +144,17 @@ function saveLogoUpload_(base64, fileName, mimeType) {
 
 function getLogoDataUrl_() {
   var id = getScriptProps_().getProperty(PROP.LOGO_FILE_ID);
-  if (!id) return '';
+  if (id) {
+    try {
+      var blob = DriveApp.getFileById(id).getBlob();
+      return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    } catch (e) {
+      // fall through to bundled logo
+    }
+  }
   try {
-    var blob = DriveApp.getFileById(id).getBlob();
-    return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
-  } catch (e) {
+    return getDefaultLogoDataUrl_();
+  } catch (e2) {
     return '';
   }
 }

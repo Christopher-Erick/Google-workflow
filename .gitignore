@@ -16,3 +16,4 @@ token.json
 # Local clasp binding may contain scriptId — prefer GitHub secrets in CI.
 # Commit .clasp.json only if you intentionally want scriptId in the repo.
 .clasp.json
+assets/logo.b64.txt

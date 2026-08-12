@@ -68,6 +68,7 @@
     document.title = branding.orgName || 'Nazarene for she Organisation';
     if (branding.logoDataUrl) {
       $('brandLogo').src = branding.logoDataUrl;
+      $('brandLogo').alt = branding.orgName || 'Nazarene for She';
       $('brandLogo').hidden = false;
       $('brandMark').hidden = true;
     } else {
@@ -76,6 +77,49 @@
     }
   }
 
+  function showAuthBanner(message, chooserUrl) {
+    var banner = $('authBanner');
+    banner.hidden = false;
+    $('authBannerText').textContent = message ||
+      'This browser has multiple Google accounts, so the app cannot see which one to use. Choose your roster Gmail (the email Admin added in Setup).';
+    var link = $('btnChooseAccount');
+    if (chooserUrl) {
+      link.href = chooserUrl;
+      link.hidden = false;
+    } else {
+      link.hidden = true;
+    }
+  }
+
+  function hideAuthBanner() {
+    $('authBanner').hidden = true;
+  }
+
+  function accountChooserUrl(webAppUrl) {
+    if (!webAppUrl) return '';
+    return 'https://accounts.google.com/AccountChooser?continue=' +
+      encodeURIComponent(webAppUrl) + '&prompt=select_account';
+  }
+
+  function maybeAutoChooseAccount(chooserUrl) {
+    if (!chooserUrl) return;
+    try {
+      if (sessionStorage.getItem('naz_auth_redirected') === '1') return;
+      sessionStorage.setItem('naz_auth_redirected', '1');
+      window.top.location.href = chooserUrl;
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function isAuthIdentityError(msg) {
+    msg = String(msg || '').toLowerCase();
+    return msg.indexOf('email') >= 0 ||
+      msg.indexOf('google account') >= 0 ||
+      msg.indexOf('roster') >= 0 ||
+      msg.indexOf('sign in') >= 0 ||
+      msg.indexOf('multiple accounts') >= 0;
+  }
   function renderSetupForm(setup) {
     var form = $('setupForm');
     form.innerHTML = '';
@@ -359,20 +403,62 @@
   }
 
   function boot() {
-    run('apiGetBootstrap')
-      .then(applyBootstrap)
+    hideAuthBanner();
+    // Show bundled branding immediately (from server-rendered INITIAL)
+    if (typeof INITIAL !== 'undefined' && INITIAL) {
+      applyBranding(INITIAL.branding || {});
+      if (INITIAL.accountChooserUrl) {
+        if ($('accountChooserLink')) $('accountChooserLink').href = INITIAL.accountChooserUrl;
+        if ($('btnChooseAccount')) $('btnChooseAccount').href = INITIAL.accountChooserUrl;
+      }
+    }
+
+    run('apiGetPublicConfig')
+      .then(function (pub) {
+        if (pub && pub.branding) applyBranding(pub.branding);
+        if (pub && pub.accountChooserUrl) {
+          $('accountChooserLink').href = pub.accountChooserUrl;
+          $('btnChooseAccount').href = pub.accountChooserUrl;
+        }
+        return run('apiGetBootstrap');
+      })
+      .then(function (data) {
+        hideAuthBanner();
+        try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}
+        applyBootstrap(data);
+      })
       .catch(function (err) {
         var msg = err && err.message ? err.message : String(err);
-        $('viewLoading').innerHTML =
-          '<p class="msg err">' + escapeHtml(msg) + '</p>' +
-          '<p class="lede">Tip: In a normal browser with several Google accounts, use Incognito or the Account Chooser, and sign in with an email that Admin added in Setup.</p>' +
-          '<div class="actions-row"><button type="button" class="btn primary" id="btnRetryBoot">Try again</button></div>';
-        $('btnRetryBoot').addEventListener('click', boot);
-        $('navTabs').hidden = false;
-        $('tabSetup').hidden = false;
-        showView('loading');
+        var chooser = (typeof INITIAL !== 'undefined' && INITIAL && INITIAL.accountChooserUrl) ||
+          ($('btnChooseAccount').href && $('btnChooseAccount').href.indexOf('http') === 0 ? $('btnChooseAccount').href : '');
+
+        run('apiGetPublicConfig').then(function (pub) {
+          if (pub && pub.branding) applyBranding(pub.branding);
+          if (pub && pub.accountChooserUrl) chooser = pub.accountChooserUrl;
+          finishBootError(msg, chooser);
+        }).catch(function () {
+          finishBootError(msg, chooser);
+        });
       });
   }
+
+  function finishBootError(msg, chooser) {
+    $('viewLoading').innerHTML =
+      '<p class="msg err">' + escapeHtml(msg) + '</p>' +
+      '<p class="lede">Normal Chrome often fails when several Google accounts are signed in. Incognito works because it has only one account.</p>';
+    showAuthBanner(msg, chooser);
+    if (isAuthIdentityError(msg) && chooser) {
+      maybeAutoChooseAccount(chooser);
+    }
+    $('navTabs').hidden = false;
+    $('tabSetup').hidden = false;
+    showView('loading');
+  }
+
+  $('btnRetryAuth').addEventListener('click', function () {
+    try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}
+    boot();
+  });
 
   document.querySelectorAll('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
