@@ -44,17 +44,18 @@ function listMembers_() {
 }
 
 function getActiveUserEmail_() {
-  // IMPORTANT: do NOT fall back to EffectiveUser (group inbox / script owner).
+  // OTP session is the source of truth for this app (multi-account Chrome often
+  // returns the wrong ActiveUser, which dropped Admin/Secretary roles after login).
+  var cached = getCachedSessionEmail_();
+  if (cached) return cached;
+
   var email = '';
   try {
     email = Session.getActiveUser().getEmail();
   } catch (e) {
     email = '';
   }
-  email = String(email || '').trim().toLowerCase();
-  if (email) return email;
-  // Multi-account Chrome often hides ActiveUser — use verified email OTP session.
-  return getCachedSessionEmail_() || '';
+  return String(email || '').trim().toLowerCase();
 }
 
 function getScriptOwnerEmail_() {
@@ -233,17 +234,8 @@ function verifyLoginCode_(email, code) {
     throw new Error('Could not create a browser session. Try Incognito or a single-account Chrome profile.');
   }
   try { audit_('', 'otp_login', email, {}); } catch (eAudit) {}
-  // Lightweight context — avoid Drive/Sheets probes right after OTP
-  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
-    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
-  return {
-    email: email,
-    roles: [],
-    isAdmin: false,
-    isKnownUser: true,
-    roleMap: {},
-    setupDone: setupDone
-  };
+  // Full role context from the Roles/Members sheets (Admin, Secretary, etc.)
+  return getUserContext_();
 }
 
 function getUserContext_() {

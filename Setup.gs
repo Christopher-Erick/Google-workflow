@@ -56,7 +56,7 @@ function saveRoles_(payload) {
   OFFICER_ROLES.forEach(function (role) {
     var entry = rolesPayload[role] || {};
     var name = String(entry.name || '').trim();
-    var email = String(entry.email || '').trim();
+    var email = String(entry.email || '').trim().toLowerCase();
     var whatsapp = String(entry.whatsapp || '').trim();
     if (email && email.indexOf('@') < 0) {
       throw new Error('Invalid email for ' + role);

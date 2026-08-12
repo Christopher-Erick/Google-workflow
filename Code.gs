@@ -120,9 +120,9 @@ function apiResetStaleLinks() {
 }
 
 function buildBootstrapPayload_(ctx) {
-  ctx = ctx || getUserContext_();
+  // Always reload roles from the DB for the current OTP session
+  ctx = getUserContext_();
   var setup = getSetupState_();
-  // Prefer the verified session email on the payload
   setup.context = {
     email: ctx.email,
     roles: ctx.roles,
