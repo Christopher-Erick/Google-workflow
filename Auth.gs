@@ -6,12 +6,13 @@ function getRoleMap_() {
   var rows = sheetToObjects_(getDb_().getSheetByName(SHEETS.ROLES));
   var map = {};
   OFFICER_ROLES.forEach(function (role) {
-    map[role] = { email: '', whatsapp: '' };
+    map[role] = { name: '', email: '', whatsapp: '' };
   });
   rows.forEach(function (r) {
     var role = String(r.role || '').trim();
     if (OFFICER_ROLES.indexOf(role) < 0) return;
     map[role] = {
+      name: String(r.name || '').trim(),
       email: String(r.email || '').trim().toLowerCase(),
       whatsapp: String(r.whatsapp || '').trim()
     };
@@ -101,13 +102,45 @@ function isEmailOnRoster_(email) {
   email = String(email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') < 0) return false;
   var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
-  if (!setupDone) return true; // first-time setup: any mailbox can verify
+  if (!setupDone) {
+    // Before setup is finished, only the script owner (group Gmail) may enter Setup.
+    var owner = getScriptOwnerEmail_();
+    return !!(owner && owner === email);
+  }
   var roleMap = getRoleMap_();
   for (var i = 0; i < OFFICER_ROLES.length; i++) {
     var role = OFFICER_ROLES[i];
     if (roleMap[role] && roleMap[role].email === email) return true;
   }
   return listMembers_().some(function (m) { return m.email === email; });
+}
+
+/**
+ * Resolve a display name for emails used in history, UI, and notifications.
+ */
+function displayNameForEmail_(email, roleMap) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email) return 'Unknown';
+  roleMap = roleMap || getRoleMap_();
+  for (var i = 0; i < OFFICER_ROLES.length; i++) {
+    var role = OFFICER_ROLES[i];
+    if (roleMap[role] && roleMap[role].email === email) {
+      if (roleMap[role].name) return roleMap[role].name;
+      break;
+    }
+  }
+  var members = listMembers_();
+  for (var m = 0; m < members.length; m++) {
+    if (members[m].email === email && members[m].name) return members[m].name;
+  }
+  return email.split('@')[0];
+}
+
+function displayNameForRole_(role, roleMap) {
+  roleMap = roleMap || getRoleMap_();
+  if (roleMap[role] && roleMap[role].name) return roleMap[role].name;
+  if (roleMap[role] && roleMap[role].email) return displayNameForEmail_(roleMap[role].email, roleMap);
+  return ROLE_LABELS[role] || role;
 }
 
 function requestLoginCode_(email) {
@@ -210,6 +243,7 @@ function userHasRole_(ctx, role) {
 }
 
 function canSubmitType_(ctx, typeKey) {
+  if (ctx.isAdmin) return true;
   var def = getDocType_(typeKey);
   for (var i = 0; i < def.submitRoles.length; i++) {
     if (ctx.roles.indexOf(def.submitRoles[i]) >= 0) return true;
@@ -218,6 +252,7 @@ function canSubmitType_(ctx, typeKey) {
 }
 
 function canEditItem_(ctx, item) {
+  if (ctx.isAdmin) return true;
   var def = getDocType_(item.type);
   for (var i = 0; i < def.editRoles.length; i++) {
     if (ctx.roles.indexOf(def.editRoles[i]) >= 0) return true;
@@ -227,6 +262,7 @@ function canEditItem_(ctx, item) {
 
 function canActOnCurrentStage_(ctx, item) {
   if (item.status !== ITEM_STATUS.PENDING) return false;
+  if (ctx.isAdmin) return true;
   var role = item.current_stage_role;
   if (!role) return false;
   if (ctx.roles.indexOf(role) >= 0) return true;

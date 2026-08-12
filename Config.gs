@@ -5,7 +5,7 @@
 var APP_NAME = 'Nazarene for she Organisation';
 var ORG_NAME = 'Nazarene for she Organisation';
 var ORG_SLOGAN_DEFAULT = 'She empowered, Community inspired.';
-var ROOT_FOLDER_NAME = 'Nazarene for she Document';
+var ROOT_FOLDER_NAME = 'Nazarene for she Documents';
 var DB_SHEET_NAME = 'NAZ Workflow DB';
 
 var PROP = {
@@ -60,7 +60,7 @@ var DOC_TYPES = {
     submitRoles: ['secretary'],
     editRoles: ['secretary'],
     autoApproveFirstIfSubmitterRole: 'secretary',
-    folderApproved: ['Minutes'],
+    folderApproved: ['Minutes', 'Approved'],
     folderDeclined: ['Minutes', 'Declined'],
     folderPending: ['Minutes', 'Pending']
   },
@@ -71,7 +71,7 @@ var DOC_TYPES = {
     submitRoles: ['treasurer'],
     editRoles: ['secretary'],
     autoApproveFirstIfSubmitterRole: 'treasurer',
-    folderApproved: ['Proof of Payment'],
+    folderApproved: ['Proof of Payment', 'Approved'],
     folderDeclined: ['Proof of Payment', 'Declined'],
     folderPending: ['Proof of Payment', 'Pending']
   }

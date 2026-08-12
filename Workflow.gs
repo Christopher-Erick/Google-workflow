@@ -91,6 +91,7 @@ function submitItem_(payload) {
       stage_index: 0,
       action: 'auto_approved_on_submit',
       actor_email: ctx.email,
+      actor_name: displayNameForEmail_(ctx.email, ctx.roleMap),
       note: 'First stage auto-approved because submitter holds that role',
       timestamp: now
     });
@@ -113,15 +114,16 @@ function approveItem_(itemId, note) {
   if (!item) throw new Error('Item not found.');
   if (item.status !== ITEM_STATUS.PENDING) throw new Error('Item is not pending.');
 
-  if (!canActOnCurrentStage_(ctx, item) && !ctx.isAdmin) {
+  var isStageHolder = !!(item.current_stage_role && ctx.roles.indexOf(item.current_stage_role) >= 0);
+  if (!isStageHolder && !ctx.isAdmin) {
     throw new Error('You are not the current approver for this stage.');
   }
-  // Admin force via separate endpoint; normal approve requires stage role
-  if (!canActOnCurrentStage_(ctx, item)) {
-    throw new Error('Use force-approve as admin to override.');
+  // Admin approving a stage they do not hold → force-approve in the stage holder's name
+  if (ctx.isAdmin && !isStageHolder) {
+    return adminForceApprove_(itemId, note);
   }
 
-  return advanceApproval_(item, ctx.email, note || '', false);
+  return advanceApproval_(item, ctx.email, note || '', false, ctx);
 }
 
 function declineItem_(itemId, note) {
@@ -130,14 +132,16 @@ function declineItem_(itemId, note) {
   var item = findById_(SHEETS.ITEMS, itemId);
   if (!item) throw new Error('Item not found.');
   if (item.status !== ITEM_STATUS.PENDING) throw new Error('Item is not pending.');
-  if (!canActOnCurrentStage_(ctx, item) && !ctx.isAdmin) {
+  if (!canActOnCurrentStage_(ctx, item)) {
     throw new Error('Only the current-stage approver (or admin) can decline.');
   }
   note = String(note || '').trim();
   if (!note) throw new Error('A decline reason is required.');
 
   var def = getDocType_(item.type);
+  var roleMap = getRoleMap_();
   var now = nowIso_();
+  var actorName = displayNameForEmail_(ctx.email, roleMap);
 
   appendRow_(SHEETS.APPROVALS, {
     id: newId_('apr'),
@@ -146,12 +150,13 @@ function declineItem_(itemId, note) {
     stage_index: item.current_stage_index,
     action: 'declined',
     actor_email: ctx.email,
+    actor_name: actorName,
     note: note,
     timestamp: now
   });
 
   var folderId = moveFileToPath_(item.file_id, def.folderDeclined);
-  attachDeclineNote_(item.file_id, ctx.email, note, item.title);
+  attachDeclineNote_(item.file_id, actorName + ' <' + ctx.email + '>', note, item.title);
 
   var patch = {
     status: ITEM_STATUS.DECLINED,
@@ -164,24 +169,43 @@ function declineItem_(itemId, note) {
   };
   updateRowById_(SHEETS.ITEMS, item.id, patch);
   var updated = findById_(SHEETS.ITEMS, item.id);
-  audit_(item.id, 'declined', ctx.email, { note: note });
+  audit_(item.id, 'declined', ctx.email, { note: note, actorName: actorName });
   notifyStageUpdate_(updated, ctx.email, 'declined');
   return enrichItem_(updated, ctx);
 }
 
-function advanceApproval_(item, actorEmail, note, isForce) {
+function advanceApproval_(item, actorEmail, note, isForce, actingCtx) {
   var def = getDocType_(item.type);
+  var roleMap = getRoleMap_();
   var now = nowIso_();
   var idx = Number(item.current_stage_index);
+  var stageRole = item.current_stage_role || def.stages[idx];
+
+  var recordedEmail = actorEmail;
+  var recordedName = displayNameForEmail_(actorEmail, roleMap);
+  var recordedNote = note || '';
+  var recordedAction = isForce ? 'force_approved' : 'approved';
+
+  if (isForce) {
+    var holderEmail = (roleMap[stageRole] && roleMap[stageRole].email) || '';
+    recordedEmail = holderEmail || actorEmail;
+    recordedName = displayNameForRole_(stageRole, roleMap);
+    var adminName = displayNameForEmail_((actingCtx && actingCtx.email) || actorEmail, roleMap);
+    recordedNote =
+      (note ? String(note).trim() + ' — ' : '') +
+      'Force-approved by Admin (' + adminName + ') on behalf of ' +
+      recordedName + ' (' + (ROLE_LABELS[stageRole] || stageRole) + ')';
+  }
 
   appendRow_(SHEETS.APPROVALS, {
     id: newId_('apr'),
     item_id: item.id,
-    stage_role: item.current_stage_role || def.stages[idx],
+    stage_role: stageRole,
     stage_index: idx,
-    action: isForce ? 'force_approved' : 'approved',
-    actor_email: actorEmail,
-    note: note || '',
+    action: recordedAction,
+    actor_email: recordedEmail,
+    actor_name: recordedName,
+    note: recordedNote,
     timestamp: now
   });
 
@@ -197,8 +221,11 @@ function advanceApproval_(item, actorEmail, note, isForce) {
       last_action_at: now
     });
     var done = findById_(SHEETS.ITEMS, item.id);
-    audit_(item.id, isForce ? 'force_approved_final' : 'approved_final', actorEmail, {});
-    notifyStageUpdate_(done, actorEmail, 'approved_final');
+    audit_(item.id, isForce ? 'force_approved_final' : 'approved_final', recordedEmail, {
+      actorName: recordedName,
+      forceBy: isForce ? ((actingCtx && actingCtx.email) || '') : ''
+    });
+    notifyStageUpdate_(done, recordedEmail, 'approved_final');
     return enrichItem_(done, getUserContext_());
   }
 
@@ -209,10 +236,11 @@ function advanceApproval_(item, actorEmail, note, isForce) {
     last_action_at: now
   });
   var updated = findById_(SHEETS.ITEMS, item.id);
-  audit_(item.id, isForce ? 'force_approved_stage' : 'approved_stage', actorEmail, {
-    next: def.stages[nextIdx]
+  audit_(item.id, isForce ? 'force_approved_stage' : 'approved_stage', recordedEmail, {
+    next: def.stages[nextIdx],
+    actorName: recordedName
   });
-  notifyStageUpdate_(updated, actorEmail, 'approved_stage');
+  notifyStageUpdate_(updated, recordedEmail, 'approved_stage');
   return enrichItem_(updated, getUserContext_());
 }
 
@@ -223,12 +251,35 @@ function adminForceApprove_(itemId, note) {
   var item = findById_(SHEETS.ITEMS, itemId);
   if (!item) throw new Error('Item not found.');
   if (item.status !== ITEM_STATUS.PENDING) throw new Error('Item is not pending.');
-  return advanceApproval_(item, ctx.email, note || 'Admin force-approve', true);
+  return advanceApproval_(item, ctx.email, note || '', true, ctx);
 }
 
 function adminSkipStage_(itemId, note) {
-  // Skip current stage = same as force approve current stage only
   return adminForceApprove_(itemId, note || 'Admin skipped stage');
+}
+
+function deleteItem_(itemId) {
+  requireSetup_();
+  var ctx = requireKnownUser_();
+  if (!ctx.isAdmin) throw new Error('Only Admin can delete documents.');
+  var item = findById_(SHEETS.ITEMS, itemId);
+  if (!item) throw new Error('Item not found.');
+
+  trashWorkflowFile_(item.file_id);
+  var sheet = getDb_().getSheetByName(SHEETS.ITEMS);
+  if (item._row) {
+    sheet.deleteRow(item._row);
+  } else {
+    // reload to find row
+    var fresh = findById_(SHEETS.ITEMS, itemId);
+    if (fresh && fresh._row) sheet.deleteRow(fresh._row);
+  }
+  audit_(itemId, 'deleted', ctx.email, {
+    title: item.title,
+    type: item.type,
+    by: displayNameForEmail_(ctx.email)
+  });
+  return { deleted: true, id: itemId };
 }
 
 function editReplaceFile_(itemId, payload) {
@@ -366,7 +417,24 @@ function reopenItem_(itemId) {
 function enrichItem_(item, ctx) {
   if (!item) return null;
   var def = getDocType_(item.type);
-  var approvals = listApprovalsForItem_(item.id);
+  var roleMap = getRoleMap_();
+  var approvals = listApprovalsForItem_(item.id).map(function (a) {
+    var name = String(a.actor_name || '').trim() || displayNameForEmail_(a.actor_email, roleMap);
+    return {
+      id: a.id,
+      item_id: a.item_id,
+      stage_role: a.stage_role,
+      stage_index: a.stage_index,
+      action: a.action,
+      actor_email: a.actor_email,
+      actor_name: name,
+      note: a.note,
+      timestamp: a.timestamp,
+      display: name + (a.actor_email ? ' <' + a.actor_email + '>' : '')
+    };
+  });
+  var submitterName = displayNameForEmail_(item.submitter_email, roleMap);
+  var declinedByName = item.declined_by ? displayNameForEmail_(item.declined_by, roleMap) : '';
   return {
     id: item.id,
     type: item.type,
@@ -377,27 +445,35 @@ function enrichItem_(item, ctx) {
     progress: stageProgressText_(item),
     currentStageIndex: Number(item.current_stage_index),
     currentStageRole: item.current_stage_role,
+    currentStageName: item.current_stage_role ? displayNameForRole_(item.current_stage_role, roleMap) : '',
     stages: def.stages.map(function (r) {
-      return { role: r, label: ROLE_LABELS[r] || r };
+      return {
+        role: r,
+        label: ROLE_LABELS[r] || r,
+        name: displayNameForRole_(r, roleMap)
+      };
     }),
     submitterEmail: item.submitter_email,
+    submitterName: submitterName,
     fileId: item.file_id,
     fileUrl: item.file_url,
     fileName: item.file_name,
     mimeType: item.mime_type,
     declineNote: item.decline_note,
     declinedBy: item.declined_by,
+    declinedByName: declinedByName,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
     lastActionAt: item.last_action_at,
     version: item.version,
     approvals: approvals,
     permissions: {
-      canApprove: canActOnCurrentStage_(ctx, item),
-      canDecline: canActOnCurrentStage_(ctx, item) || ctx.isAdmin,
+      canApprove: !!(item.current_stage_role && ctx.roles.indexOf(item.current_stage_role) >= 0) && item.status === ITEM_STATUS.PENDING,
+      canDecline: canActOnCurrentStage_(ctx, item),
       canEdit: canEditItem_(ctx, item) && item.status !== ITEM_STATUS.APPROVED,
       canReopen: item.status === ITEM_STATUS.DECLINED && (ctx.isAdmin || ctx.email === String(item.submitter_email).toLowerCase()),
       canForce: ctx.isAdmin && item.status === ITEM_STATUS.PENDING,
+      canDelete: ctx.isAdmin,
       canView: true
     }
   };

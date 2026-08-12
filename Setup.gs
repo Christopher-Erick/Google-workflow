@@ -8,7 +8,7 @@ function runInitialSetup() {
   ensureReminderTrigger_();
   return {
     ok: true,
-    message: 'Database, Drive folders, and reminder trigger are ready. Save roles & members next.'
+    message: 'Database and Drive folders ready (Requisition/Minutes/Proof of Payment → Pending, Approved, Declined). Save roles next, then click Create Drive folders again after saving to refresh viewer sharing.'
   };
 }
 
@@ -46,16 +46,21 @@ function saveRoles_(payload) {
 
   OFFICER_ROLES.forEach(function (role) {
     var entry = rolesPayload[role] || {};
+    var name = String(entry.name || '').trim();
     var email = String(entry.email || '').trim();
     var whatsapp = String(entry.whatsapp || '').trim();
     if (email && email.indexOf('@') < 0) {
       throw new Error('Invalid email for ' + role);
     }
-    sheet.appendRow([role, email, whatsapp, now]);
+    sheet.appendRow([role, name, email, whatsapp, now]);
   });
 
   saveMembersList_(payload.members || []);
   ensureAccessEmailsOnRoster_(ctx.email);
+  // Refresh Drive sharing so all roster members can view documents
+  try {
+    shareFolderWithRoster_(ensureDriveTree_());
+  } catch (eShare) {}
 
   if (payload.webAppUrl) {
     getScriptProps_().setProperty(PROP.WEB_APP_URL, String(payload.webAppUrl).trim());
@@ -174,7 +179,7 @@ function getSetupState_() {
   var roleMap = getRoleMap_();
   var roles = {};
   OFFICER_ROLES.forEach(function (r) {
-    roles[r] = roleMap[r] || { email: '', whatsapp: '' };
+    roles[r] = roleMap[r] || { name: '', email: '', whatsapp: '' };
   });
   var webAppUrl = getWebAppUrl_();
   return {

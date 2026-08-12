@@ -14,29 +14,49 @@ function ensureDriveTree_() {
     }
   }
   if (!root) {
-    root = findOrCreateFolder_(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
+    // Prefer agreed name; fall back to older singular name if already present
+    root = findFolderByName_(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
+    if (!root) {
+      root = findFolderByName_(DriveApp.getRootFolder(), 'Nazarene for she Document');
+    }
+    if (!root) {
+      root = DriveApp.getRootFolder().createFolder(ROOT_FOLDER_NAME);
+    }
     props.setProperty(PROP.ROOT_FOLDER_ID, root.getId());
   }
 
-  var requisition = findOrCreateFolder_(root, 'Requisition');
-  findOrCreateFolder_(requisition, 'Approved');
-  findOrCreateFolder_(requisition, 'Declined');
-  findOrCreateFolder_(requisition, 'Pending');
+  // Required structure for every document type:
+  // Type / Pending | Approved | Declined
+  ensureTypeTree_(root, 'Requisition');
+  ensureTypeTree_(root, 'Minutes');
+  ensureTypeTree_(root, 'Proof of Payment');
 
-  var minutes = findOrCreateFolder_(root, 'Minutes');
-  findOrCreateFolder_(minutes, 'Pending');
-  findOrCreateFolder_(minutes, 'Declined');
-
-  var proof = findOrCreateFolder_(root, 'Proof of Payment');
-  findOrCreateFolder_(proof, 'Pending');
-  findOrCreateFolder_(proof, 'Declined');
+  try {
+    shareFolderWithRoster_(root);
+  } catch (e) {
+    console.error('shareFolderWithRoster_ failed: ' + e.message);
+  }
 
   return root;
 }
 
-function findOrCreateFolder_(parent, name) {
+function ensureTypeTree_(root, typeName) {
+  var typeFolder = findOrCreateFolder_(root, typeName);
+  findOrCreateFolder_(typeFolder, 'Pending');
+  findOrCreateFolder_(typeFolder, 'Approved');
+  findOrCreateFolder_(typeFolder, 'Declined');
+  return typeFolder;
+}
+
+function findFolderByName_(parent, name) {
   var it = parent.getFoldersByName(name);
   if (it.hasNext()) return it.next();
+  return null;
+}
+
+function findOrCreateFolder_(parent, name) {
+  var existing = findFolderByName_(parent, name);
+  if (existing) return existing;
   return parent.createFolder(name);
 }
 
@@ -77,6 +97,7 @@ function saveUploadedFile_(typeKey, title, version, blob, originalName, mimeType
   if (mimeType) blob.setContentType(mimeType);
   blob.setName(fileName);
   var file = folder.createFile(blob);
+  shareFileWithRoster_(file);
   return {
     fileId: file.getId(),
     fileUrl: file.getUrl(),
@@ -94,6 +115,7 @@ function moveFileToPath_(fileId, pathParts) {
     parents.next().removeFile(file);
   }
   dest.addFile(file);
+  shareFileWithRoster_(file);
   return dest.getId();
 }
 
@@ -111,8 +133,8 @@ function attachDeclineNote_(fileId, declinedBy, note, itemTitle) {
     'Declined by: ' + (declinedBy || '') + '\n' +
     'When: ' + nowIso_() + '\n\n' +
     'Reason:\n' + (note || '') + '\n';
-  parent.createFile(noteName, body, MimeType.PLAIN_TEXT);
-  // Also set Drive description on main file
+  var noteFile = parent.createFile(noteName, body, MimeType.PLAIN_TEXT);
+  shareFileWithRoster_(noteFile);
   try {
     file.setDescription(
       'DECLINED by ' + declinedBy + ' on ' + nowIso_() + '\n\n' + note
@@ -123,8 +145,6 @@ function attachDeclineNote_(fileId, declinedBy, note, itemTitle) {
 }
 
 function replaceFileContent_(item, blob, originalName, mimeType) {
-  var def = getDocType_(item.type);
-  // Remove old file from pending; create new version in pending
   try {
     DriveApp.getFileById(item.file_id).setTrashed(true);
   } catch (e) {
@@ -139,4 +159,53 @@ function replaceFileContent_(item, blob, originalName, mimeType) {
     originalName,
     mimeType
   );
+}
+
+function listRosterEmailsForSharing_() {
+  var set = {};
+  try {
+    var roleMap = getRoleMap_();
+    OFFICER_ROLES.forEach(function (role) {
+      if (roleMap[role] && roleMap[role].email) set[roleMap[role].email] = true;
+    });
+    listMembers_().forEach(function (m) {
+      if (m.email) set[m.email] = true;
+    });
+  } catch (e) {
+    // DB may not be ready during very first create
+  }
+  return Object.keys(set);
+}
+
+function shareFolderWithRoster_(folder) {
+  if (!folder) return;
+  var emails = listRosterEmailsForSharing_();
+  emails.forEach(function (email) {
+    try {
+      folder.addViewer(email);
+    } catch (e) {
+      // may already have access or invalid address
+    }
+  });
+}
+
+function shareFileWithRoster_(file) {
+  if (!file) return;
+  var emails = listRosterEmailsForSharing_();
+  emails.forEach(function (email) {
+    try {
+      file.addViewer(email);
+    } catch (e) {
+      // ignore
+    }
+  });
+}
+
+function trashWorkflowFile_(fileId) {
+  if (!fileId) return;
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+  } catch (e) {
+    // ignore
+  }
 }

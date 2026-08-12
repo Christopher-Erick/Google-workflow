@@ -80,38 +80,25 @@
   function showAuthBanner(message, chooserUrl) {
     var banner = $('authBanner');
     banner.hidden = false;
+    if ($('appMain')) $('appMain').hidden = true;
+    if ($('navTabs')) $('navTabs').hidden = true;
     $('authBannerText').textContent = message ||
-      'Enter your roster Gmail. We will email a 6-digit login code so Chrome multi-account does not block you.';
-    var link = $('btnChooseAccount');
-    if (chooserUrl) {
-      link.href = chooserUrl;
-    }
+      'Enter your roster Gmail. We will email a 6-digit login code.';
   }
 
   function hideAuthBanner() {
     $('authBanner').hidden = true;
+    if ($('appMain')) $('appMain').hidden = false;
     setMsg($('loginMsg'), '', true);
-  }
-
-  function isAuthIdentityError(msg) {
-    msg = String(msg || '');
-    return msg.indexOf('IDENTITY_REQUIRED') >= 0 ||
-      msg.toLowerCase().indexOf('email') >= 0 ||
-      msg.toLowerCase().indexOf('google account') >= 0 ||
-      msg.toLowerCase().indexOf('roster') >= 0 ||
-      msg.toLowerCase().indexOf('sign in') >= 0 ||
-      msg.toLowerCase().indexOf('identity') >= 0;
   }
 
   function finishBootError(msg, chooser) {
     var clean = String(msg || '').replace(/^IDENTITY_REQUIRED:\s*/i, '');
-    $('viewLoading').innerHTML =
-      '<p class="msg err">' + escapeHtml(clean) + '</p>' +
-      '<p class="lede">Use the login code form above — it works even when Chrome has many Google accounts.</p>';
     showAuthBanner(clean, chooser);
-    $('navTabs').hidden = false;
-    $('tabSetup').hidden = false;
-    showView('loading');
+    if ($('viewLoading')) {
+      $('viewLoading').innerHTML = '';
+      $('viewLoading').hidden = true;
+    }
   }
   function renderSetupForm(setup) {
     var form = $('setupForm');
@@ -125,6 +112,8 @@
       var entry = roles[role] || { email: '', whatsapp: '' };
       card.innerHTML =
         '<h4>' + escapeHtml(labels[role] || role) + '</h4>' +
+        '<div class="field"><label>Full name</label>' +
+        '<input data-role="' + role + '" data-field="name" type="text" value="' + escapeAttr(entry.name || '') + '" placeholder="Display name for emails & history" /></div>' +
         '<div class="field"><label>Email</label>' +
         '<input data-role="' + role + '" data-field="email" type="email" value="' + escapeAttr(entry.email || '') + '" /></div>' +
         '<div class="field"><label>WhatsApp (with country code)</label>' +
@@ -178,7 +167,7 @@
     $('setupForm').querySelectorAll('[data-role]').forEach(function (input) {
       var role = input.getAttribute('data-role');
       var field = input.getAttribute('data-field');
-      if (!roles[role]) roles[role] = { email: '', whatsapp: '' };
+      if (!roles[role]) roles[role] = { name: '', email: '', whatsapp: '' };
       roles[role][field] = input.value.trim();
     });
     return roles;
@@ -267,13 +256,19 @@
     state.selected = item;
     $('dlgTitle').textContent = item.title;
     var body = $('dlgBody');
+    var submitterLabel = item.submitterName
+      ? (item.submitterName + ' <' + item.submitterEmail + '>')
+      : (item.submitterEmail || '');
+    var declinedLabel = item.declinedByName
+      ? (item.declinedByName + (item.declinedBy ? ' <' + item.declinedBy + '>' : ''))
+      : (item.declinedBy || '');
     body.innerHTML =
       '<p class="kv"><span>Type:</span> ' + escapeHtml(item.typeLabel) + '</p>' +
       '<p class="kv"><span>Status:</span> ' + escapeHtml(item.progress) + '</p>' +
-      '<p class="kv"><span>Submitter:</span> ' + escapeHtml(item.submitterEmail) + '</p>' +
+      '<p class="kv"><span>Submitted by:</span> ' + escapeHtml(submitterLabel) + '</p>' +
       '<p class="kv"><span>File:</span> <a href="' + escapeAttr(item.fileUrl) + '" target="_blank" rel="noopener">' + escapeHtml(item.fileName) + '</a></p>' +
       (item.declineNote
-        ? '<p class="kv"><span>Decline note:</span> ' + escapeHtml(item.declineNote) + ' <em>(' + escapeHtml(item.declinedBy || '') + ')</em></p>'
+        ? '<p class="kv"><span>Decline note:</span> ' + escapeHtml(item.declineNote) + ' <em>(' + escapeHtml(declinedLabel) + ')</em></p>'
         : '') +
       '<div class="stage-rail" style="margin-top:0.75rem">' + renderStagePills(item) + '</div>' +
       renderHistory(item);
@@ -289,6 +284,9 @@
       actions.appendChild(actionBtn('Force approve stage', 'secondary', function () { doForce(item.id); }));
       actions.appendChild(actionBtn('Skip stage', 'secondary', function () { doSkip(item.id); }));
     }
+    if (p.canDelete) {
+      actions.appendChild(actionBtn('Delete document', 'danger', function () { doDelete(item.id, item.title); }));
+    }
     $('detailDialog').showModal();
   }
 
@@ -297,7 +295,8 @@
     if (!rows.length) return '';
     var html = '<h4 style="margin:1rem 0 0.4rem;font-size:0.95rem;">History</h4><ul style="margin:0;padding-left:1.1rem;color:var(--muted);font-size:0.88rem;">';
     rows.slice(0, 12).forEach(function (a) {
-      html += '<li><strong>' + escapeHtml(a.action) + '</strong> — ' + escapeHtml(a.actor_email || '') +
+      var who = a.actor_name || a.display || a.actor_email || '';
+      html += '<li><strong>' + escapeHtml(a.action) + '</strong> — ' + escapeHtml(who) +
         (a.note ? ' · ' + escapeHtml(a.note) : '') + '</li>';
     });
     html += '</ul>';
@@ -345,6 +344,16 @@
   function doReopen(id) {
     $('detailDialog').close();
     run('apiReopen', id).then(refreshItems).catch(showError);
+  }
+
+  function doDelete(id, title) {
+    if (!confirm('Delete “‘ + (title || id) + '”? This removes it from the workflow and trashes the Drive file.')) {
+      return;
+    }
+    $('detailDialog').close();
+    run('apiDeleteItem', id)
+      .then(refreshItems)
+      .catch(showError);
   }
 
   function refreshItems() {
@@ -400,16 +409,7 @@
     run('apiLogoutSession')
       .catch(function () { /* still show login form */ })
       .then(function () {
-        showAuthBanner(
-          'Signed out. Enter the roster Gmail you want to use and request a login code.',
-          (state.bootstrap && state.bootstrap.setup && state.bootstrap.setup.accountChooserUrl) ||
-            (typeof INITIAL !== 'undefined' && INITIAL && INITIAL.accountChooserUrl) ||
-            ''
-        );
-        $('navTabs').hidden = true;
-        $('viewLoading').innerHTML =
-          '<p class="lede">Use the login form above to continue as a different person. Do not use Google’s account switcher here — it often causes the Drive error.</p>';
-        showView('loading');
+        showAuthBanner('Signed out. Enter the roster Gmail you want to use and request a login code.');
         $('userChip').textContent = 'Signed out';
         if ($('loginEmail')) $('loginEmail').focus();
       });
@@ -421,6 +421,8 @@
     var ctx = data.context || {};
     applyBranding(data.branding || (data.setup && data.setup.branding));
     $('userChip').textContent = formatUserChip(ctx);
+    hideAuthBanner();
+    if ($('viewLoading')) $('viewLoading').hidden = true;
 
     $('navTabs').hidden = false;
     var setup = data.setup || {};
@@ -439,42 +441,34 @@
   }
 
   function boot() {
-    hideAuthBanner();
-    // Show bundled branding immediately (from server-rendered INITIAL)
+    if ($('appMain')) $('appMain').hidden = true;
+    if ($('navTabs')) $('navTabs').hidden = true;
+    // Show branding immediately; keep app chrome hidden until authenticated
     if (typeof INITIAL !== 'undefined' && INITIAL) {
       applyBranding(INITIAL.branding || {});
-      if (INITIAL.accountChooserUrl) {
-        if ($('accountChooserLink')) $('accountChooserLink').href = INITIAL.accountChooserUrl;
-        if ($('btnChooseAccount')) $('btnChooseAccount').href = INITIAL.accountChooserUrl;
+      if (INITIAL.accountChooserUrl && $('accountChooserLink')) {
+        $('accountChooserLink').href = INITIAL.accountChooserUrl;
       }
     }
 
     run('apiGetPublicConfig')
       .then(function (pub) {
         if (pub && pub.branding) applyBranding(pub.branding);
-        if (pub && pub.accountChooserUrl) {
-          if ($('accountChooserLink')) $('accountChooserLink').href = pub.accountChooserUrl;
-          if ($('btnChooseAccount')) $('btnChooseAccount').href = pub.accountChooserUrl;
+        if (pub && pub.accountChooserUrl && $('accountChooserLink')) {
+          $('accountChooserLink').href = pub.accountChooserUrl;
+        }
+        if (pub && pub.identityRequired) {
+          showAuthBanner('Enter your roster Gmail. Only registered users can sign in.');
         }
         return run('apiGetBootstrap');
       })
       .then(function (data) {
-        hideAuthBanner();
         try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}
         applyBootstrap(data);
       })
       .catch(function (err) {
         var msg = err && err.message ? err.message : String(err);
-        var chooser = (typeof INITIAL !== 'undefined' && INITIAL && INITIAL.accountChooserUrl) ||
-          ($('btnChooseAccount').href && $('btnChooseAccount').href.indexOf('http') === 0 ? $('btnChooseAccount').href : '');
-
-        run('apiGetPublicConfig').then(function (pub) {
-          if (pub && pub.branding) applyBranding(pub.branding);
-          if (pub && pub.accountChooserUrl) chooser = pub.accountChooserUrl;
-          finishBootError(msg, chooser);
-        }).catch(function () {
-          finishBootError(msg, chooser);
-        });
+        finishBootError(msg);
       });
   }
 

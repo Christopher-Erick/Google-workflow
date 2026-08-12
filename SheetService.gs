@@ -33,7 +33,7 @@ function ensureDb_() {
     props.setProperty(PROP.DB_SPREADSHEET_ID, ss.getId());
   }
   ensureSheet_(ss, SHEETS.ROLES, [
-    'role', 'email', 'whatsapp', 'updated_at'
+    'role', 'name', 'email', 'whatsapp', 'updated_at'
   ]);
   ensureSheet_(ss, SHEETS.MEMBERS, [
     'name', 'email', 'whatsapp', 'updated_at'
@@ -46,7 +46,7 @@ function ensureDb_() {
   ]);
   ensureSheet_(ss, SHEETS.APPROVALS, [
     'id', 'item_id', 'stage_role', 'stage_index', 'action', 'actor_email',
-    'note', 'timestamp'
+    'actor_name', 'note', 'timestamp'
   ]);
   ensureSheet_(ss, SHEETS.AUDIT, [
     'id', 'item_id', 'action', 'actor_email', 'detail', 'timestamp'
@@ -63,6 +63,16 @@ function ensureSheet_(ss, name, headers) {
     sheet.setFrozenRows(1);
   } else if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    // Add any new columns missing from older DBs
+    var existing = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    headers.forEach(function (h) {
+      if (existing.indexOf(h) < 0) {
+        sheet.insertColumnAfter(sheet.getLastColumn());
+        sheet.getRange(1, sheet.getLastColumn()).setValue(h);
+        existing.push(h);
+      }
+    });
   }
   // Remove default Sheet1 if present and empty
   var def = ss.getSheetByName('Sheet1');

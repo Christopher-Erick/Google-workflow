@@ -173,6 +173,12 @@ function apiDecline(itemId, note) {
   });
 }
 
+function apiDeleteItem(itemId) {
+  return withError_(function () {
+    return deleteItem_(itemId);
+  });
+}
+
 function apiForceApprove(itemId, note) {
   return withError_(function () {
     return { item: adminForceApprove_(itemId, note) };
