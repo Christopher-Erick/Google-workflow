@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <?!= include('Styles'); ?>
+  </head>
+  <body>
+    <div class="bg-wash" aria-hidden="true"></div>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <p class="brand-eyebrow">Church of the Nazarene</p>
+          <h1 class="brand-title">SHE Document Workflow</h1>
+        </div>
+      </div>
+      <div class="user-chip" id="userChip">Signing in…</div>
+    </header>
+
+    <main class="shell">
+      <nav class="tabs" id="navTabs" hidden>
+        <button type="button" class="tab active" data-view="dashboard">Dashboard</button>
+        <button type="button" class="tab" data-view="submit" id="tabSubmit" hidden>Submit</button>
+        <button type="button" class="tab" data-view="setup" id="tabSetup" hidden>Setup</button>
+      </nav>
+
+      <section id="viewLoading" class="panel">
+        <p class="muted">Loading workflow…</p>
+      </section>
+
+      <section id="viewSetup" class="panel" hidden>
+        <h2>Role setup</h2>
+        <p class="lede">Enter emails and optional WhatsApp numbers. Do this while signed into the <strong>group Gmail</strong> that owns the Drive.</p>
+        <div class="actions-row">
+          <button type="button" class="btn secondary" id="btnInitInfra">Create Drive folders &amp; database</button>
+        </div>
+        <form id="setupForm" class="setup-grid"></form>
+        <div class="field">
+          <label for="webAppUrl">Web app URL (paste after you Deploy)</label>
+          <input id="webAppUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" />
+        </div>
+        <div class="actions-row">
+          <button type="button" class="btn primary" id="btnSaveRoles">Save roles &amp; finish setup</button>
+        </div>
+        <p id="setupMsg" class="msg" hidden></p>
+      </section>
+
+      <section id="viewDashboard" class="panel" hidden>
+        <div class="dash-head">
+          <div>
+            <h2>Approvals</h2>
+            <p class="lede">Live status for requisitions, minutes, and proof of payment.</p>
+          </div>
+          <div class="filters">
+            <select id="filterType">
+              <option value="">All types</option>
+              <option value="requisition">Requisition</option>
+              <option value="minutes">Minutes</option>
+              <option value="proof_of_payment">Proof of Payment</option>
+            </select>
+            <select id="filterStatus">
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="declined">Declined</option>
+            </select>
+            <button type="button" class="btn secondary" id="btnRefresh">Refresh</button>
+          </div>
+        </div>
+        <div id="itemList" class="item-list"></div>
+      </section>
+
+      <section id="viewSubmit" class="panel" hidden>
+        <h2>Submit document</h2>
+        <p class="lede">Upload a Google-exported or office file, PDF, or image. Naming is applied automatically.</p>
+        <form id="submitForm" class="form-stack">
+          <div class="field">
+            <label for="docType">Document type</label>
+            <select id="docType" required></select>
+          </div>
+          <div class="field">
+            <label for="docTitle">Title / short name</label>
+            <input id="docTitle" type="text" maxlength="80" placeholder="e.g. Catering for rally" required />
+          </div>
+          <div class="field">
+            <label for="docFile">File (PDF, DOCX, XLSX, images…)</label>
+            <input id="docFile" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*,.png,.jpg,.jpeg,.gif,.webp" required />
+          </div>
+          <button type="submit" class="btn primary" id="btnSubmit">Upload &amp; start approval</button>
+          <p id="submitMsg" class="msg" hidden></p>
+        </form>
+      </section>
+    </main>
+
+    <dialog id="detailDialog" class="dialog">
+      <form method="dialog" class="dialog-inner">
+        <header class="dialog-head">
+          <h3 id="dlgTitle">Item</h3>
+          <button type="submit" class="icon-close" value="cancel" aria-label="Close">×</button>
+        </header>
+        <div id="dlgBody"></div>
+        <footer class="dialog-actions" id="dlgActions"></footer>
+      </form>
+    </dialog>
+
+    <dialog id="noteDialog" class="dialog">
+      <form id="noteForm" class="dialog-inner">
+        <header class="dialog-head">
+          <h3 id="noteTitle">Note</h3>
+          <button type="button" class="icon-close" id="noteCancel" aria-label="Close">×</button>
+        </header>
+        <div class="field">
+          <label for="noteText" id="noteLabel">Reason</label>
+          <textarea id="noteText" rows="4" required></textarea>
+        </div>
+        <div class="field" id="replaceFileField" hidden>
+          <label for="replaceFile">Replacement file</label>
+          <input id="replaceFile" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*,.png,.jpg,.jpeg,.gif,.webp" />
+        </div>
+        <footer class="dialog-actions">
+          <button type="button" class="btn secondary" id="noteCancelBtn">Cancel</button>
+          <button type="submit" class="btn primary" id="noteConfirm">Confirm</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <?!= include('JavaScript'); ?>
+  </body>
+</html>

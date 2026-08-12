@@ -1,0 +1,427 @@
+<script>
+  var state = {
+    bootstrap: null,
+    items: [],
+    selected: null,
+    noteMode: null
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  function run(fnName) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.ok === false) reject(new Error(res.error || 'Request failed'));
+          else resolve(res && res.data !== undefined ? res.data : res);
+        })
+        .withFailureHandler(function (err) {
+          reject(err);
+        })[fnName].apply(null, args);
+    });
+  }
+
+  function showView(name) {
+    ['Loading', 'Setup', 'Dashboard', 'Submit'].forEach(function (v) {
+      var el = $('view' + v);
+      if (el) el.hidden = v.toLowerCase() !== name;
+    });
+    document.querySelectorAll('.tab').forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-view') === name);
+    });
+  }
+
+  function setMsg(el, text, ok) {
+    if (!el) return;
+    el.hidden = !text;
+    el.textContent = text || '';
+    el.className = 'msg ' + (ok ? 'ok' : 'err');
+  }
+
+  function fileToPayload(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) return reject(new Error('No file selected'));
+      if (file.size > 35 * 1024 * 1024) {
+        return reject(new Error('File too large (max ~35MB for this upload path).'));
+      }
+      var reader = new FileReader();
+      reader.onload = function () {
+        var result = reader.result || '';
+        var base64 = String(result).split(',')[1] || '';
+        resolve({
+          fileBase64: base64,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream'
+        });
+      };
+      reader.onerror = function () { reject(new Error('Could not read file')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderSetupForm(setup) {
+    var form = $('setupForm');
+    form.innerHTML = '';
+    var labels = setup.roleLabels || {};
+    var roles = setup.roles || {};
+    Object.keys(labels).forEach(function (role) {
+      var card = document.createElement('div');
+      card.className = 'role-card';
+      var entry = roles[role] || { email: '', whatsapp: '' };
+      card.innerHTML =
+        '<h4>' + escapeHtml(labels[role]) + '</h4>' +
+        '<div class="field"><label>Email' + (role === 'members' ? 's (comma-separated)' : '') + '</label>' +
+        '<input data-role="' + role + '" data-field="email" type="text" value="' + escapeAttr(entry.email || '') + '" /></div>' +
+        (role === 'members'
+          ? ''
+          : '<div class="field"><label>WhatsApp (optional, for v2)</label>' +
+            '<input data-role="' + role + '" data-field="whatsapp" type="text" value="' + escapeAttr(entry.whatsapp || '') + '" placeholder="+254…" /></div>');
+      form.appendChild(card);
+    });
+    $('webAppUrl').value = setup.webAppUrl || '';
+  }
+
+  function collectRoles() {
+    var roles = {};
+    $('setupForm').querySelectorAll('[data-role]').forEach(function (input) {
+      var role = input.getAttribute('data-role');
+      var field = input.getAttribute('data-field');
+      if (!roles[role]) roles[role] = { email: '', whatsapp: '' };
+      roles[role][field] = input.value.trim();
+    });
+    return roles;
+  }
+
+  function renderSubmitOptions(canSubmit) {
+    var sel = $('docType');
+    sel.innerHTML = '';
+    var options = [
+      { key: 'requisition', label: 'Requisition' },
+      { key: 'minutes', label: 'Minutes' },
+      { key: 'proof_of_payment', label: 'Proof of Payment' }
+    ];
+    var any = false;
+    options.forEach(function (o) {
+      if (canSubmit && canSubmit[o.key]) {
+        any = true;
+        var opt = document.createElement('option');
+        opt.value = o.key;
+        opt.textContent = o.label;
+        sel.appendChild(opt);
+      }
+    });
+    $('tabSubmit').hidden = !any;
+    return any;
+  }
+
+  function renderItems() {
+    var type = $('filterType').value;
+    var status = $('filterStatus').value;
+    var list = (state.items || []).filter(function (i) {
+      if (type && i.type !== type) return false;
+      if (status && i.status !== status) return false;
+      return true;
+    });
+    var root = $('itemList');
+    root.innerHTML = '';
+    if (!list.length) {
+      root.innerHTML = '<p class="muted">No documents match these filters.</p>';
+      return;
+    }
+    list.forEach(function (item) {
+      var el = document.createElement('article');
+      el.className = 'item';
+      el.innerHTML =
+        '<div class="item-top">' +
+          '<h3 class="item-title">' + escapeHtml(item.title) + '</h3>' +
+          '<span class="badge ' + escapeAttr(item.status) + '">' + escapeHtml(item.status) + '</span>' +
+        '</div>' +
+        '<p class="item-meta">' + escapeHtml(item.typeLabel) + ' · ' + escapeHtml(item.progress) + '</p>' +
+        '<div class="stage-rail">' + renderStagePills(item) + '</div>';
+      el.addEventListener('click', function () { openDetail(item); });
+      root.appendChild(el);
+    });
+  }
+
+  function renderStagePills(item) {
+    var idx = item.currentStageIndex || 0;
+    return (item.stages || []).map(function (s, i) {
+      var cls = 'stage-pill';
+      if (item.status === 'approved' || i < idx) cls += ' done';
+      else if (item.status === 'pending' && i === idx) cls += ' current';
+      return '<span class="' + cls + '">' + escapeHtml(s.label) + '</span>';
+    }).join('');
+  }
+
+  function openDetail(item) {
+    state.selected = item;
+    $('dlgTitle').textContent = item.title;
+    var body = $('dlgBody');
+    body.innerHTML =
+      '<p class="kv"><span>Type:</span> ' + escapeHtml(item.typeLabel) + '</p>' +
+      '<p class="kv"><span>Status:</span> ' + escapeHtml(item.progress) + '</p>' +
+      '<p class="kv"><span>Submitter:</span> ' + escapeHtml(item.submitterEmail) + '</p>' +
+      '<p class="kv"><span>File:</span> <a href="' + escapeAttr(item.fileUrl) + '" target="_blank" rel="noopener">' + escapeHtml(item.fileName) + '</a></p>' +
+      (item.declineNote
+        ? '<p class="kv"><span>Decline note:</span> ' + escapeHtml(item.declineNote) + ' <em>(' + escapeHtml(item.declinedBy || '') + ')</em></p>'
+        : '') +
+      '<div class="stage-rail" style="margin-top:0.75rem">' + renderStagePills(item) + '</div>' +
+      renderHistory(item);
+
+    var actions = $('dlgActions');
+    actions.innerHTML = '';
+    var p = item.permissions || {};
+    if (p.canApprove) actions.appendChild(actionBtn('Approve', 'primary', function () { doApprove(item.id); }));
+    if (p.canDecline) actions.appendChild(actionBtn('Decline…', 'danger', function () { openNote('decline', item); }));
+    if (p.canEdit) actions.appendChild(actionBtn('Replace file (resets approvals)…', 'secondary', function () { openNote('edit', item); }));
+    if (p.canReopen) actions.appendChild(actionBtn('Reopen', 'secondary', function () { doReopen(item.id); }));
+    if (p.canForce) {
+      actions.appendChild(actionBtn('Force approve stage', 'secondary', function () { doForce(item.id); }));
+      actions.appendChild(actionBtn('Skip stage', 'secondary', function () { doSkip(item.id); }));
+    }
+    $('detailDialog').showModal();
+  }
+
+  function renderHistory(item) {
+    var rows = (item.approvals || []).slice().reverse();
+    if (!rows.length) return '';
+    var html = '<h4 style="margin:1rem 0 0.4rem;font-size:0.95rem;">History</h4><ul style="margin:0;padding-left:1.1rem;color:var(--muted);font-size:0.88rem;">';
+    rows.slice(0, 12).forEach(function (a) {
+      html += '<li><strong>' + escapeHtml(a.action) + '</strong> — ' + escapeHtml(a.actor_email || '') +
+        (a.note ? ' · ' + escapeHtml(a.note) : '') + '</li>';
+    });
+    html += '</ul>';
+    return html;
+  }
+
+  function actionBtn(label, cls, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn ' + cls;
+    b.textContent = label;
+    b.addEventListener('click', function (e) {
+      e.preventDefault();
+      onClick();
+    });
+    return b;
+  }
+
+  function openNote(mode, item) {
+    state.noteMode = mode;
+    state.selected = item;
+    $('noteTitle').textContent = mode === 'decline' ? 'Decline reason' : 'Replace document';
+    $('noteLabel').textContent = mode === 'decline' ? 'Why is this declined?' : 'Optional note';
+    $('noteText').value = '';
+    $('noteText').required = mode === 'decline';
+    $('replaceFileField').hidden = mode !== 'edit';
+    $('replaceFile').value = '';
+    $('replaceFile').required = mode === 'edit';
+    $('detailDialog').close();
+    $('noteDialog').showModal();
+  }
+
+  function doApprove(id) {
+    $('detailDialog').close();
+    run('apiApprove', id, '')
+      .then(refreshItems)
+      .catch(showError);
+  }
+
+  function doForce(id) {
+    $('detailDialog').close();
+    run('apiForceApprove', id, 'Admin force-approve')
+      .then(refreshItems)
+      .catch(showError);
+  }
+
+  function doSkip(id) {
+    $('detailDialog').close();
+    run('apiSkipStage', id, 'Admin skipped stage')
+      .then(refreshItems)
+      .catch(showError);
+  }
+
+  function doReopen(id) {
+    $('detailDialog').close();
+    run('apiReopen', id)
+      .then(refreshItems)
+      .catch(showError);
+  }
+
+  function refreshItems() {
+    var filter = {
+      type: $('filterType').value || undefined,
+      status: $('filterStatus').value || undefined
+    };
+    return run('apiListItems', filter).then(function (data) {
+      state.items = (data && data.items) || [];
+      renderItems();
+    });
+  }
+
+  function showError(err) {
+    alert(err && err.message ? err.message : String(err));
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
+
+  function applyBootstrap(data) {
+    state.bootstrap = data;
+    state.items = data.items || [];
+    var ctx = data.context || {};
+    $('userChip').textContent = (ctx.email || 'Unknown user') +
+      (ctx.roles && ctx.roles.length ? ' · ' + ctx.roles.join(', ') : '') +
+      (ctx.isAdmin ? ' · admin' : '');
+
+    $('navTabs').hidden = false;
+    var setup = data.setup || {};
+    renderSetupForm(setup);
+    var canSubmitAny = renderSubmitOptions(data.canSubmit || {});
+
+    if (!setup.setupDone) {
+      $('tabSetup').hidden = false;
+      showView('setup');
+      return;
+    }
+
+    $('tabSetup').hidden = !ctx.isAdmin;
+    showView('dashboard');
+    renderItems();
+    if (!canSubmitAny && !ctx.isAdmin) {
+      // members view-only
+    }
+  }
+
+  function boot() {
+    run('apiGetBootstrap')
+      .then(applyBootstrap)
+      .catch(function (err) {
+        $('viewLoading').innerHTML = '<p class="msg err">' + escapeHtml(err.message || err) + '</p>' +
+          '<p class="muted">If this is first deploy, open Setup after authorizing the script, or run apiRunInitialSetup from the editor.</p>';
+        $('navTabs').hidden = false;
+        $('tabSetup').hidden = false;
+        showView('setup');
+        renderSetupForm({ roleLabels: {
+          admin: 'Admin (overlay)', chair: 'Chair', vice_chair: 'Vice Chair', secretary: 'Secretary',
+          assistant_secretary: 'Assistant Secretary', patron: 'Patron', treasurer: 'Treasurer',
+          members: 'Members (comma-separated emails)'
+        }, roles: {} });
+      });
+  }
+
+  document.querySelectorAll('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      showView(tab.getAttribute('data-view'));
+    });
+  });
+
+  $('btnInitInfra').addEventListener('click', function () {
+    setMsg($('setupMsg'), 'Creating folders & database…', true);
+    run('apiRunInitialSetup')
+      .then(function (res) {
+        setMsg($('setupMsg'), res.message || 'Ready.', true);
+      })
+      .catch(function (err) {
+        setMsg($('setupMsg'), err.message, false);
+      });
+  });
+
+  $('btnSaveRoles').addEventListener('click', function () {
+    setMsg($('setupMsg'), 'Saving…', true);
+    run('apiSaveRoles', {
+      roles: collectRoles(),
+      webAppUrl: $('webAppUrl').value.trim()
+    })
+      .then(function () {
+        setMsg($('setupMsg'), 'Roles saved. Reloading…', true);
+        return run('apiGetBootstrap');
+      })
+      .then(applyBootstrap)
+      .catch(function (err) {
+        setMsg($('setupMsg'), err.message, false);
+      });
+  });
+
+  $('btnRefresh').addEventListener('click', function () {
+    refreshItems().catch(showError);
+  });
+  $('filterType').addEventListener('change', renderItems);
+  $('filterStatus').addEventListener('change', renderItems);
+
+  $('submitForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var file = $('docFile').files[0];
+    var btn = $('btnSubmit');
+    btn.disabled = true;
+    setMsg($('submitMsg'), 'Uploading…', true);
+    fileToPayload(file)
+      .then(function (filePayload) {
+        return run('apiSubmitItem', {
+          type: $('docType').value,
+          title: $('docTitle').value.trim(),
+          fileBase64: filePayload.fileBase64,
+          fileName: filePayload.fileName,
+          mimeType: filePayload.mimeType
+        });
+      })
+      .then(function () {
+        setMsg($('submitMsg'), 'Submitted. Notifications sent.', true);
+        $('submitForm').reset();
+        return run('apiGetBootstrap');
+      })
+      .then(applyBootstrap)
+      .then(function () { showView('dashboard'); })
+      .catch(function (err) {
+        setMsg($('submitMsg'), err.message, false);
+      })
+      .then(function () { btn.disabled = false; });
+  });
+
+  $('noteCancel').addEventListener('click', function () { $('noteDialog').close(); });
+  $('noteCancelBtn').addEventListener('click', function () { $('noteDialog').close(); });
+
+  $('noteForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var item = state.selected;
+    if (!item) return;
+    var mode = state.noteMode;
+    var note = $('noteText').value.trim();
+    var confirmBtn = $('noteConfirm');
+    confirmBtn.disabled = true;
+
+    var promise;
+    if (mode === 'decline') {
+      promise = run('apiDecline', item.id, note);
+    } else if (mode === 'edit') {
+      var file = $('replaceFile').files[0];
+      promise = fileToPayload(file).then(function (fp) {
+        return run('apiEditReplace', item.id, {
+          fileBase64: fp.fileBase64,
+          fileName: fp.fileName,
+          mimeType: fp.mimeType,
+          note: note
+        });
+      });
+    } else {
+      promise = Promise.reject(new Error('Unknown action'));
+    }
+
+    promise
+      .then(function () {
+        $('noteDialog').close();
+        return refreshItems();
+      })
+      .catch(showError)
+      .then(function () { confirmBtn.disabled = false; });
+  });
+
+  boot();
+</script>
