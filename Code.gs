@@ -48,7 +48,9 @@ function apiGetBootstrap() {
     }
     return {
       appName: APP_NAME,
+      orgName: ORG_NAME,
       setup: setup,
+      branding: setup.branding,
       context: {
         email: ctx.email,
         roles: ctx.roles,

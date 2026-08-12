@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- GitHub Actions + clasp continuous deploy (`docs/CI.md`) so pushes to `master` update Apps Script and the live web app deployment
+- Organisation branding: **Nazarene for she Organisation**, slogan, and logo upload on the dashboard
+- Members list with **email + WhatsApp** per person; WhatsApp field on every officer
+- Dual notifications: email always; WhatsApp via optional webhook template
+- Clearer multi-account browser errors + Account Chooser link
+- GitHub Actions + clasp continuous deploy (`docs/CI.md`)
 
 ### Changed
 

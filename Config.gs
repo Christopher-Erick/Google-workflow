@@ -2,7 +2,9 @@
  * Nazarene for SHE — shared config & workflow definitions
  */
 
-var APP_NAME = 'Nazarene for SHE Document Workflow';
+var APP_NAME = 'Nazarene for she Organisation';
+var ORG_NAME = 'Nazarene for she Organisation';
+var ORG_SLOGAN_DEFAULT = 'She empowered, Community inspired.';
 var ROOT_FOLDER_NAME = 'Nazarene for she Document';
 var DB_SHEET_NAME = 'NAZ Workflow DB';
 
@@ -10,18 +12,22 @@ var PROP = {
   SETUP_DONE: 'SETUP_DONE',
   ROOT_FOLDER_ID: 'ROOT_FOLDER_ID',
   DB_SPREADSHEET_ID: 'DB_SPREADSHEET_ID',
-  WEB_APP_URL: 'WEB_APP_URL'
+  WEB_APP_URL: 'WEB_APP_URL',
+  ORG_SLOGAN: 'ORG_SLOGAN',
+  LOGO_FILE_ID: 'LOGO_FILE_ID',
+  WHATSAPP_MODE: 'WHATSAPP_MODE',
+  WHATSAPP_WEBHOOK_URL: 'WHATSAPP_WEBHOOK_URL'
 };
 
-var ROLES = [
+/** Officer roles only — members live on the Members sheet */
+var OFFICER_ROLES = [
   'admin',
   'chair',
   'vice_chair',
   'secretary',
   'assistant_secretary',
   'patron',
-  'treasurer',
-  'members'
+  'treasurer'
 ];
 
 var ROLE_LABELS = {
@@ -31,8 +37,7 @@ var ROLE_LABELS = {
   secretary: 'Secretary (not Admin)',
   assistant_secretary: 'Assistant Secretary',
   patron: 'Patron',
-  treasurer: 'Treasurer',
-  members: 'Members (comma-separated emails)'
+  treasurer: 'Treasurer'
 };
 
 /** Document types and approval chains (role keys in order) */

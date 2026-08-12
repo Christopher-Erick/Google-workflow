@@ -13,10 +13,11 @@
     <div class="bg-wash" aria-hidden="true"></div>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
+        <img id="brandLogo" class="brand-logo" alt="" hidden />
+        <span id="brandMark" class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p class="brand-eyebrow">Church of the Nazarene</p>
-          <h1 class="brand-title">SHE Document Workflow</h1>
+          <p class="brand-eyebrow" id="brandSlogan">She empowered, Community inspired.</p>
+          <h1 class="brand-title" id="brandTitle">Nazarene for she Organisation</h1>
         </div>
       </div>
       <div class="user-chip" id="userChip">Signing in…</div>
@@ -34,18 +35,61 @@
       </section>
 
       <section id="viewSetup" class="panel" hidden>
-        <h2>Role setup</h2>
-        <p class="lede">Enter emails and optional WhatsApp numbers. <strong>Admin and Secretary must be different people</strong> (different emails). Do this while signed into the <strong>group Gmail</strong> that owns the Drive.</p>
+        <h2>Organisation setup</h2>
+        <p class="lede">
+          Set branding, officer emails + WhatsApp numbers, and the full members list.
+          <strong>Admin and Secretary must be different people.</strong>
+          Use the group Gmail that owns Drive for first-time create.
+        </p>
+        <p class="lede" id="browserHelp">
+          If the link fails in a normal browser (multiple Google accounts), open the
+          <a id="accountChooserLink" href="#" target="_blank" rel="noopener">Account Chooser link</a>
+          and pick a roster Gmail.
+        </p>
         <div class="actions-row">
           <button type="button" class="btn secondary" id="btnInitInfra">Create Drive folders &amp; database</button>
         </div>
-        <form id="setupForm" class="setup-grid"></form>
+
+        <h3 class="section-title">Branding</h3>
         <div class="field">
-          <label for="webAppUrl">Web app URL (paste after you Deploy)</label>
+          <label for="orgSlogan">Slogan</label>
+          <input id="orgSlogan" type="text" value="She empowered, Community inspired." />
+        </div>
+        <div class="field">
+          <label for="logoFile">Organisation logo (PNG/JPG) — upload to show on the dashboard</label>
+          <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+        </div>
+
+        <h3 class="section-title">Officers (email + WhatsApp for each)</h3>
+        <form id="setupForm" class="setup-grid"></form>
+
+        <h3 class="section-title">Members (everyone else — email + WhatsApp)</h3>
+        <p class="lede">Add each member so they get email and WhatsApp updates. Use country code, e.g. +2547…</p>
+        <div id="membersList" class="members-list"></div>
+        <div class="actions-row">
+          <button type="button" class="btn secondary" id="btnAddMember">+ Add member</button>
+        </div>
+
+        <h3 class="section-title">WhatsApp delivery</h3>
+        <p class="lede">Email always sends. WhatsApp needs a webhook (CallMeBot, Twilio, Africa&apos;s Talking, etc.). Leave Off until you have one.</p>
+        <div class="field">
+          <label for="whatsappMode">Mode</label>
+          <select id="whatsappMode">
+            <option value="off">Off (email only)</option>
+            <option value="webhook">Webhook ({{phone}} / {{text}})</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="whatsappWebhookUrl">Webhook URL template</label>
+          <input id="whatsappWebhookUrl" type="url" placeholder="https://…?phone={{phone}}&amp;text={{text}}" />
+        </div>
+
+        <div class="field">
+          <label for="webAppUrl">Web app URL</label>
           <input id="webAppUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" />
         </div>
         <div class="actions-row">
-          <button type="button" class="btn primary" id="btnSaveRoles">Save roles &amp; finish setup</button>
+          <button type="button" class="btn primary" id="btnSaveRoles">Save setup</button>
         </div>
         <p id="setupMsg" class="msg" hidden></p>
       </section>
@@ -77,7 +121,7 @@
 
       <section id="viewSubmit" class="panel" hidden>
         <h2>Submit document</h2>
-        <p class="lede">Upload a Google-exported or office file, PDF, or image. Naming is applied automatically.</p>
+        <p class="lede">Upload PDF, DOCX, XLSX, or images. Naming is applied automatically.</p>
         <form id="submitForm" class="form-stack">
           <div class="field">
             <label for="docType">Document type</label>
@@ -88,7 +132,7 @@
             <input id="docTitle" type="text" maxlength="80" placeholder="e.g. Catering for rally" required />
           </div>
           <div class="field">
-            <label for="docFile">File (PDF, DOCX, XLSX, images…)</label>
+            <label for="docFile">File</label>
             <input id="docFile" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*,.png,.jpg,.jpeg,.gif,.webp" required />
           </div>
           <button type="submit" class="btn primary" id="btnSubmit">Upload &amp; start approval</button>

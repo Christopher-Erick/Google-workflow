@@ -4,6 +4,7 @@
 
 var SHEETS = {
   ROLES: 'Roles',
+  MEMBERS: 'Members',
   ITEMS: 'Items',
   APPROVALS: 'Approvals',
   AUDIT: 'Audit',
@@ -33,6 +34,9 @@ function ensureDb_() {
   }
   ensureSheet_(ss, SHEETS.ROLES, [
     'role', 'email', 'whatsapp', 'updated_at'
+  ]);
+  ensureSheet_(ss, SHEETS.MEMBERS, [
+    'name', 'email', 'whatsapp', 'updated_at'
   ]);
   ensureSheet_(ss, SHEETS.ITEMS, [
     'id', 'type', 'title', 'status', 'current_stage_index', 'current_stage_role',

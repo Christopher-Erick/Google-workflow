@@ -5,13 +5,32 @@
 function getRoleMap_() {
   var rows = sheetToObjects_(getDb_().getSheetByName(SHEETS.ROLES));
   var map = {};
+  OFFICER_ROLES.forEach(function (role) {
+    map[role] = { email: '', whatsapp: '' };
+  });
   rows.forEach(function (r) {
-    map[r.role] = {
+    var role = String(r.role || '').trim();
+    if (OFFICER_ROLES.indexOf(role) < 0) return;
+    map[role] = {
       email: String(r.email || '').trim().toLowerCase(),
       whatsapp: String(r.whatsapp || '').trim()
     };
   });
   return map;
+}
+
+function listMembers_() {
+  ensureDb_();
+  return sheetToObjects_(getDb_().getSheetByName(SHEETS.MEMBERS)).map(function (m) {
+    return {
+      name: String(m.name || '').trim(),
+      email: String(m.email || '').trim().toLowerCase(),
+      whatsapp: String(m.whatsapp || '').trim(),
+      _row: m._row
+    };
+  }).filter(function (m) {
+    return m.email || m.whatsapp;
+  });
 }
 
 function getActiveUserEmail_() {
@@ -20,27 +39,20 @@ function getActiveUserEmail_() {
   return String(email || '').trim().toLowerCase();
 }
 
-function parseMemberEmails_(raw) {
-  return String(raw || '')
-    .split(/[,;\n]+/)
-    .map(function (e) { return e.trim().toLowerCase(); })
-    .filter(function (e) { return e && e.indexOf('@') > 0; });
-}
-
 function getUserContext_() {
   ensureDb_();
   var email = getActiveUserEmail_();
   var roles = getRoleMap_();
   var myRoles = [];
-  Object.keys(roles).forEach(function (role) {
-    if (role === 'members') {
-      if (parseMemberEmails_(roles.members.email).indexOf(email) >= 0) {
-        myRoles.push('members');
-      }
-    } else if (roles[role].email && roles[role].email === email) {
+  OFFICER_ROLES.forEach(function (role) {
+    if (roles[role] && roles[role].email && roles[role].email === email) {
       myRoles.push(role);
     }
   });
+  var members = listMembers_();
+  var isMember = members.some(function (m) { return m.email && m.email === email; });
+  if (isMember && myRoles.indexOf('members') < 0) myRoles.push('members');
+
   // Admin and Secretary are separate people/roles — never conflate them.
   var isAdmin = !!(roles.admin && roles.admin.email && roles.admin.email === email);
 
@@ -62,10 +74,17 @@ function getUserContext_() {
 function requireKnownUser_() {
   var ctx = getUserContext_();
   if (!ctx.email) {
-    throw new Error('Sign in with your Google account to use this workflow.');
+    throw new Error(
+      'Google did not share your email (often happens with multiple accounts signed in). ' +
+      'Open the web app in Incognito, or a Chrome profile with only your roster Gmail, ' +
+      'or use the Account Chooser link from Setup.'
+    );
   }
   if (ctx.setupDone && !ctx.isKnownUser) {
-    throw new Error('Your email is not on the SHE workflow roster. Ask the Admin to add you in Setup.');
+    throw new Error(
+      'Your Google account (' + ctx.email + ') is not on the SHE roster. ' +
+      'Ask Admin to add this email under Officers or Members in Setup, then refresh.'
+    );
   }
   return ctx;
 }
@@ -106,15 +125,24 @@ function requireSetup_() {
 
 function allNotificationEmails_(roleMap) {
   var set = {};
-  ROLES.forEach(function (role) {
-    if (!roleMap[role]) return;
-    if (role === 'members') {
-      parseMemberEmails_(roleMap.members.email).forEach(function (e) {
-        set[e] = true;
-      });
-    } else if (roleMap[role].email) {
-      set[roleMap[role].email] = true;
-    }
+  OFFICER_ROLES.forEach(function (role) {
+    if (roleMap[role] && roleMap[role].email) set[roleMap[role].email] = true;
+  });
+  listMembers_().forEach(function (m) {
+    if (m.email) set[m.email] = true;
+  });
+  return Object.keys(set);
+}
+
+function allNotificationPhones_(roleMap) {
+  var set = {};
+  OFFICER_ROLES.forEach(function (role) {
+    var phone = normalizePhone_(roleMap[role] && roleMap[role].whatsapp);
+    if (phone) set[phone] = true;
+  });
+  listMembers_().forEach(function (m) {
+    var phone = normalizePhone_(m.whatsapp);
+    if (phone) set[phone] = true;
   });
   return Object.keys(set);
 }
@@ -125,4 +153,23 @@ function emailsForRoles_(roleMap, roleKeys) {
     if (roleMap[role] && roleMap[role].email) out.push(roleMap[role].email);
   });
   return out;
+}
+
+function phonesForRoles_(roleMap, roleKeys) {
+  var out = [];
+  (roleKeys || []).forEach(function (role) {
+    var phone = normalizePhone_(roleMap[role] && roleMap[role].whatsapp);
+    if (phone) out.push(phone);
+  });
+  return out;
+}
+
+function normalizePhone_(raw) {
+  var s = String(raw || '').trim();
+  if (!s) return '';
+  s = s.replace(/[\s()-]/g, '');
+  if (s.charAt(0) !== '+' && /^\d+$/.test(s)) {
+    // keep digits; caller may store with country code already
+  }
+  return s;
 }

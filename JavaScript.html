@@ -3,7 +3,8 @@
     bootstrap: null,
     items: [],
     selected: null,
-    noteMode: null
+    noteMode: null,
+    pendingLogo: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -60,26 +61,79 @@
     });
   }
 
+  function applyBranding(branding) {
+    branding = branding || {};
+    $('brandTitle').textContent = branding.orgName || 'Nazarene for she Organisation';
+    $('brandSlogan').textContent = branding.slogan || 'She empowered, Community inspired.';
+    document.title = branding.orgName || 'Nazarene for she Organisation';
+    if (branding.logoDataUrl) {
+      $('brandLogo').src = branding.logoDataUrl;
+      $('brandLogo').hidden = false;
+      $('brandMark').hidden = true;
+    } else {
+      $('brandLogo').hidden = true;
+      $('brandMark').hidden = false;
+    }
+  }
+
   function renderSetupForm(setup) {
     var form = $('setupForm');
     form.innerHTML = '';
     var labels = setup.roleLabels || {};
     var roles = setup.roles || {};
-    Object.keys(labels).forEach(function (role) {
+    var officerRoles = setup.officerRoles || Object.keys(labels);
+    officerRoles.forEach(function (role) {
       var card = document.createElement('div');
       card.className = 'role-card';
       var entry = roles[role] || { email: '', whatsapp: '' };
       card.innerHTML =
-        '<h4>' + escapeHtml(labels[role]) + '</h4>' +
-        '<div class="field"><label>Email' + (role === 'members' ? 's (comma-separated)' : '') + '</label>' +
-        '<input data-role="' + role + '" data-field="email" type="text" value="' + escapeAttr(entry.email || '') + '" /></div>' +
-        (role === 'members'
-          ? ''
-          : '<div class="field"><label>WhatsApp (optional, for v2)</label>' +
-            '<input data-role="' + role + '" data-field="whatsapp" type="text" value="' + escapeAttr(entry.whatsapp || '') + '" placeholder="+254…" /></div>');
+        '<h4>' + escapeHtml(labels[role] || role) + '</h4>' +
+        '<div class="field"><label>Email</label>' +
+        '<input data-role="' + role + '" data-field="email" type="email" value="' + escapeAttr(entry.email || '') + '" /></div>' +
+        '<div class="field"><label>WhatsApp (with country code)</label>' +
+        '<input data-role="' + role + '" data-field="whatsapp" type="text" value="' + escapeAttr(entry.whatsapp || '') + '" placeholder="+2547…" /></div>';
       form.appendChild(card);
     });
+
+    renderMembers(setup.members || []);
+    $('orgSlogan').value = (setup.branding && setup.branding.slogan) || 'She empowered, Community inspired.';
+    $('whatsappMode').value = setup.whatsappMode || 'off';
+    $('whatsappWebhookUrl').value = setup.whatsappWebhookUrl || '';
     $('webAppUrl').value = setup.webAppUrl || '';
+    if (setup.accountChooserUrl) {
+      $('accountChooserLink').href = setup.accountChooserUrl;
+    }
+  }
+
+  function renderMembers(members) {
+    var root = $('membersList');
+    root.innerHTML = '';
+    if (!members.length) members = [{ name: '', email: '', whatsapp: '' }];
+    members.forEach(function (m, idx) {
+      root.appendChild(memberCard(m, idx));
+    });
+  }
+
+  function memberCard(m, idx) {
+    var card = document.createElement('div');
+    card.className = 'member-card';
+    card.innerHTML =
+      '<h4>Member ' + (idx + 1) + '</h4>' +
+      '<div class="field"><label>Name</label><input data-member="name" type="text" value="' + escapeAttr(m.name || '') + '" /></div>' +
+      '<div class="field"><label>Email</label><input data-member="email" type="email" value="' + escapeAttr(m.email || '') + '" /></div>' +
+      '<div class="field"><label>WhatsApp</label><input data-member="whatsapp" type="text" value="' + escapeAttr(m.whatsapp || '') + '" placeholder="+2547…" /></div>' +
+      '<div class="row-actions"><button type="button" class="btn secondary btn-remove-member">Remove</button></div>';
+    card.querySelector('.btn-remove-member').addEventListener('click', function () {
+      card.remove();
+      renumberMembers();
+    });
+    return card;
+  }
+
+  function renumberMembers() {
+    $('membersList').querySelectorAll('.member-card h4').forEach(function (h, i) {
+      h.textContent = 'Member ' + (i + 1);
+    });
   }
 
   function collectRoles() {
@@ -91,6 +145,24 @@
       roles[role][field] = input.value.trim();
     });
     return roles;
+  }
+
+  function collectMembers() {
+    var out = [];
+    $('membersList').querySelectorAll('.member-card').forEach(function (card) {
+      out.push({
+        name: (card.querySelector('[data-member="name"]') || {}).value || '',
+        email: (card.querySelector('[data-member="email"]') || {}).value || '',
+        whatsapp: (card.querySelector('[data-member="whatsapp"]') || {}).value || ''
+      });
+    });
+    return out.map(function (m) {
+      return {
+        name: String(m.name).trim(),
+        email: String(m.email).trim(),
+        whatsapp: String(m.whatsapp).trim()
+      };
+    }).filter(function (m) { return m.email || m.whatsapp; });
   }
 
   function renderSubmitOptions(canSubmit) {
@@ -223,38 +295,26 @@
 
   function doApprove(id) {
     $('detailDialog').close();
-    run('apiApprove', id, '')
-      .then(refreshItems)
-      .catch(showError);
+    run('apiApprove', id, '').then(refreshItems).catch(showError);
   }
-
   function doForce(id) {
     $('detailDialog').close();
-    run('apiForceApprove', id, 'Admin force-approve')
-      .then(refreshItems)
-      .catch(showError);
+    run('apiForceApprove', id, 'Admin force-approve').then(refreshItems).catch(showError);
   }
-
   function doSkip(id) {
     $('detailDialog').close();
-    run('apiSkipStage', id, 'Admin skipped stage')
-      .then(refreshItems)
-      .catch(showError);
+    run('apiSkipStage', id, 'Admin skipped stage').then(refreshItems).catch(showError);
   }
-
   function doReopen(id) {
     $('detailDialog').close();
-    run('apiReopen', id)
-      .then(refreshItems)
-      .catch(showError);
+    run('apiReopen', id).then(refreshItems).catch(showError);
   }
 
   function refreshItems() {
-    var filter = {
+    return run('apiListItems', {
       type: $('filterType').value || undefined,
       status: $('filterStatus').value || undefined
-    };
-    return run('apiListItems', filter).then(function (data) {
+    }).then(function (data) {
       state.items = (data && data.items) || [];
       renderItems();
     });
@@ -277,6 +337,7 @@
     state.bootstrap = data;
     state.items = data.items || [];
     var ctx = data.context || {};
+    applyBranding(data.branding || (data.setup && data.setup.branding));
     $('userChip').textContent = (ctx.email || 'Unknown user') +
       (ctx.roles && ctx.roles.length ? ' · ' + ctx.roles.join(', ') : '') +
       (ctx.isAdmin ? ' · admin' : '');
@@ -284,7 +345,7 @@
     $('navTabs').hidden = false;
     var setup = data.setup || {};
     renderSetupForm(setup);
-    var canSubmitAny = renderSubmitOptions(data.canSubmit || {});
+    renderSubmitOptions(data.canSubmit || {});
 
     if (!setup.setupDone) {
       $('tabSetup').hidden = false;
@@ -295,25 +356,21 @@
     $('tabSetup').hidden = !ctx.isAdmin;
     showView('dashboard');
     renderItems();
-    if (!canSubmitAny && !ctx.isAdmin) {
-      // members view-only
-    }
   }
 
   function boot() {
     run('apiGetBootstrap')
       .then(applyBootstrap)
       .catch(function (err) {
-        $('viewLoading').innerHTML = '<p class="msg err">' + escapeHtml(err.message || err) + '</p>' +
-          '<p class="muted">If this is first deploy, open Setup after authorizing the script, or run apiRunInitialSetup from the editor.</p>';
+        var msg = err && err.message ? err.message : String(err);
+        $('viewLoading').innerHTML =
+          '<p class="msg err">' + escapeHtml(msg) + '</p>' +
+          '<p class="lede">Tip: In a normal browser with several Google accounts, use Incognito or the Account Chooser, and sign in with an email that Admin added in Setup.</p>' +
+          '<div class="actions-row"><button type="button" class="btn primary" id="btnRetryBoot">Try again</button></div>';
+        $('btnRetryBoot').addEventListener('click', boot);
         $('navTabs').hidden = false;
         $('tabSetup').hidden = false;
-        showView('setup');
-        renderSetupForm({ roleLabels: {
-          admin: 'Admin (overlay — separate person from Secretary)', chair: 'Chair', vice_chair: 'Vice Chair', secretary: 'Secretary (not Admin)',
-          assistant_secretary: 'Assistant Secretary', patron: 'Patron', treasurer: 'Treasurer',
-          members: 'Members (comma-separated emails)'
-        }, roles: {} });
+        showView('loading');
       });
   }
 
@@ -323,31 +380,55 @@
     });
   });
 
+  $('btnAddMember').addEventListener('click', function () {
+    $('membersList').appendChild(memberCard({ name: '', email: '', whatsapp: '' }, $('membersList').children.length));
+    renumberMembers();
+  });
+
+  $('logoFile').addEventListener('change', function () {
+    var file = $('logoFile').files[0];
+    state.pendingLogo = null;
+    if (!file) return;
+    fileToPayload(file).then(function (p) {
+      state.pendingLogo = p;
+      applyBranding({
+        orgName: $('brandTitle').textContent,
+        slogan: $('orgSlogan').value,
+        logoDataUrl: 'data:' + p.mimeType + ';base64,' + p.fileBase64
+      });
+    }).catch(showError);
+  });
+
   $('btnInitInfra').addEventListener('click', function () {
     setMsg($('setupMsg'), 'Creating folders & database…', true);
     run('apiRunInitialSetup')
-      .then(function (res) {
-        setMsg($('setupMsg'), res.message || 'Ready.', true);
-      })
-      .catch(function (err) {
-        setMsg($('setupMsg'), err.message, false);
-      });
+      .then(function (res) { setMsg($('setupMsg'), res.message || 'Ready.', true); })
+      .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
   });
 
   $('btnSaveRoles').addEventListener('click', function () {
     setMsg($('setupMsg'), 'Saving…', true);
-    run('apiSaveRoles', {
+    var payload = {
       roles: collectRoles(),
-      webAppUrl: $('webAppUrl').value.trim()
-    })
+      members: collectMembers(),
+      webAppUrl: $('webAppUrl').value.trim(),
+      orgSlogan: $('orgSlogan').value.trim(),
+      whatsappMode: $('whatsappMode').value,
+      whatsappWebhookUrl: $('whatsappWebhookUrl').value.trim()
+    };
+    if (state.pendingLogo) {
+      payload.logoBase64 = state.pendingLogo.fileBase64;
+      payload.logoFileName = state.pendingLogo.fileName;
+      payload.logoMimeType = state.pendingLogo.mimeType;
+    }
+    run('apiSaveRoles', payload)
       .then(function () {
-        setMsg($('setupMsg'), 'Roles saved. Reloading…', true);
+        setMsg($('setupMsg'), 'Saved. Reloading…', true);
+        state.pendingLogo = null;
         return run('apiGetBootstrap');
       })
       .then(applyBootstrap)
-      .catch(function (err) {
-        setMsg($('setupMsg'), err.message, false);
-      });
+      .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
   });
 
   $('btnRefresh').addEventListener('click', function () {
@@ -379,9 +460,7 @@
       })
       .then(applyBootstrap)
       .then(function () { showView('dashboard'); })
-      .catch(function (err) {
-        setMsg($('submitMsg'), err.message, false);
-      })
+      .catch(function (err) { setMsg($('submitMsg'), err.message, false); })
       .then(function () { btn.disabled = false; });
   });
 
@@ -396,7 +475,6 @@
     var note = $('noteText').value.trim();
     var confirmBtn = $('noteConfirm');
     confirmBtn.disabled = true;
-
     var promise;
     if (mode === 'decline') {
       promise = run('apiDecline', item.id, note);
@@ -413,7 +491,6 @@
     } else {
       promise = Promise.reject(new Error('Unknown action'));
     }
-
     promise
       .then(function () {
         $('noteDialog').close();
