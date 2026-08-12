@@ -34,9 +34,25 @@ function listMembers_() {
 }
 
 function getActiveUserEmail_() {
-  var email = Session.getActiveUser().getEmail();
-  if (!email) email = Session.getEffectiveUser().getEmail();
+  // IMPORTANT: do NOT fall back to EffectiveUser.
+  // Web app runs as the group Gmail ("Execute as: Me"), so EffectiveUser is always
+  // the group inbox. Using it as a fallback makes every multi-account browser
+  // session look like the group account.
+  var email = '';
+  try {
+    email = Session.getActiveUser().getEmail();
+  } catch (e) {
+    email = '';
+  }
   return String(email || '').trim().toLowerCase();
+}
+
+function getScriptOwnerEmail_() {
+  try {
+    return String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
+  } catch (e) {
+    return '';
+  }
 }
 
 function getUserContext_() {
@@ -73,17 +89,20 @@ function getUserContext_() {
 
 function requireKnownUser_() {
   var ctx = getUserContext_();
+  var owner = getScriptOwnerEmail_();
   if (!ctx.email) {
     throw new Error(
-      'Google did not share your email (often happens with multiple accounts signed in). ' +
-      'Open the web app in Incognito, or a Chrome profile with only your roster Gmail, ' +
-      'or use the Account Chooser link from Setup.'
+      'Chrome did not tell us which Google account you are using (common when several accounts are signed in). ' +
+      'Click “Choose Google account” / “Switch account” and pick your personal roster Gmail' +
+      (owner ? ' — not the group inbox (' + owner + ') unless you mean to use that account' : '') +
+      '.'
     );
   }
   if (ctx.setupDone && !ctx.isKnownUser) {
     throw new Error(
       'Your Google account (' + ctx.email + ') is not on the SHE roster. ' +
-      'Ask Admin to add this email under Officers or Members in Setup, then refresh.'
+      'Ask Admin to add this personal email under Officers or Members in Setup, then refresh. ' +
+      'Day-to-day Admin/officer work should use personal Gmail, not the group inbox.'
     );
   }
   return ctx;

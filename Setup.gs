@@ -110,13 +110,12 @@ function ensureAccessEmailsOnRoster_(actorEmail) {
   existing.forEach(function (m) { if (m.email) have[m.email] = true; });
 
   var extras = [];
-  var effective = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
-  [actorEmail, effective].forEach(function (email) {
-    email = String(email || '').trim().toLowerCase();
-    if (!email || officerEmails[email] || have[email]) return;
-    extras.push(email);
-    have[email] = true;
-  });
+  // Only ensure the person saving setup stays on the roster.
+  // Do NOT auto-treat the group inbox (EffectiveUser) as the signed-in user identity.
+  var actor = String(actorEmail || '').trim().toLowerCase();
+  if (actor && !officerEmails[actor] && !have[actor]) {
+    extras.push(actor);
+  }
   var now = nowIso_();
   extras.forEach(function (email) {
     sheet.appendRow(['Workflow access', email, '', now]);
