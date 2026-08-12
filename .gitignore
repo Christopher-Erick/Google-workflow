@@ -6,3 +6,11 @@ Thumbs.db
 *.log
 .env
 .env.*
+*.pem
+*.p12
+credentials.json
+token.json
+.idea/
+.vscode/
+*.swp
+*~
