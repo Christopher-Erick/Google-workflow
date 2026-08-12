@@ -94,22 +94,24 @@
 
   function showAuthBanner(message, chooserUrl) {
     var banner = $('authBanner');
-    banner.hidden = false;
+    if (banner) banner.hidden = false;
     if ($('appMain')) $('appMain').hidden = true;
     if ($('navTabs')) $('navTabs').hidden = true;
-    $('authBannerText').textContent = message ||
-      'Enter your roster Gmail. We will email a 6-digit login code.';
+    if ($('authBannerText') && message) {
+      $('authBannerText').textContent = message;
+    }
+    if ($('userChip')) $('userChip').textContent = 'Not signed in';
   }
 
   function hideAuthBanner() {
-    $('authBanner').hidden = true;
+    if ($('authBanner')) $('authBanner').hidden = true;
     if ($('appMain')) $('appMain').hidden = false;
     setMsg($('loginMsg'), '', true);
   }
 
   function finishBootError(msg, chooser) {
     var clean = String(msg || '').replace(/^IDENTITY_REQUIRED:\s*/i, '');
-    showAuthBanner(clean, chooser);
+    showAuthBanner(clean || undefined);
     if ($('viewLoading')) {
       $('viewLoading').innerHTML = '';
       $('viewLoading').hidden = true;
@@ -458,39 +460,35 @@
   function boot() {
     if ($('appMain')) $('appMain').hidden = true;
     if ($('navTabs')) $('navTabs').hidden = true;
-    $('userChip').textContent = 'Not signed in';
-    // Show login form immediately so a slow/dead DB never leaves a blank page
-    showAuthBanner(
-      'Enter your roster Gmail. Only registered users can sign in. ' +
-      'After a Drive wipe, use the group Gmail that owns the script, then recreate folders in Setup.'
-    );
+    // Form is visible in HTML without JS — never hide it until OTP succeeds
+    showAuthBanner();
     if (typeof INITIAL !== 'undefined' && INITIAL) {
-      applyBranding(INITIAL.branding || {});
-      if (INITIAL.accountChooserUrl && $('accountChooserLink')) {
-        $('accountChooserLink').href = INITIAL.accountChooserUrl;
-      }
+      try {
+        applyBranding(INITIAL.branding || {});
+        if (INITIAL.accountChooserUrl && $('accountChooserLink')) {
+          $('accountChooserLink').href = INITIAL.accountChooserUrl;
+        }
+      } catch (eBrand) {}
     }
 
+    // Never auto-call apiGetBootstrap here — stale sessions + deleted Drive hung the page blank.
     run('apiGetPublicConfig')
       .then(function (pub) {
         if (pub && pub.branding) applyBranding(pub.branding);
         if (pub && pub.accountChooserUrl && $('accountChooserLink')) {
           $('accountChooserLink').href = pub.accountChooserUrl;
         }
-        if (pub && pub.identityRequired) {
-          // Stay on login — do not call bootstrap (that was hanging after DB delete)
-          return null;
+        if (!pub || !pub.setupDone) {
+          showAuthBanner(
+            'Setup needed. Sign in with the group Gmail that owns this script, then Create Drive folders & database. ' +
+            'If login fails after a Drive wipe, click Clear session first.'
+          );
+        } else {
+          showAuthBanner('Enter your roster Gmail. Only registered users can sign in.');
         }
-        return run('apiGetBootstrap');
-      })
-      .then(function (data) {
-        if (!data) return;
-        try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}
-        applyBootstrap(data);
       })
       .catch(function (err) {
-        var msg = err && err.message ? err.message : String(err);
-        finishBootError(msg);
+        finishBootError((err && err.message) || String(err));
       });
   }
 
@@ -533,6 +531,22 @@
     try { sessionStorage.removeItem('naz_auth_redirected'); } catch (e) {}
     boot();
   });
+
+  if ($('btnClearSession')) {
+    $('btnClearSession').addEventListener('click', function () {
+      setMsg($('loginMsg'), 'Clearing…', true);
+      run('apiResetStaleLinks')
+        .then(function (res) {
+          setMsg($('loginMsg'), (res && res.message) || 'Cleared. Request a new login code.', true);
+          showAuthBanner(
+            'Links cleared. Sign in with the group Gmail that owns the script, then Create Drive folders & database.'
+          );
+        })
+        .catch(function (err) {
+          setMsg($('loginMsg'), err.message || String(err), false);
+        });
+    });
+  }
 
   document.querySelectorAll('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {

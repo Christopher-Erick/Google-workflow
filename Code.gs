@@ -35,12 +35,13 @@ function include(filename) {
 
 function safeContext_() {
   try {
-    var ctx = getUserContext_();
+    // Avoid Drive I/O on first paint — only report session email if present
+    var email = getActiveUserEmail_();
     return {
-      email: ctx.email,
-      roles: ctx.roles,
-      isAdmin: ctx.isAdmin,
-      setupDone: ctx.setupDone
+      email: email,
+      roles: [],
+      isAdmin: false,
+      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1'
     };
   } catch (err) {
     return { email: '', roles: [], isAdmin: false, setupDone: false, error: String(err.message || err) };
@@ -66,7 +67,8 @@ function apiGetPublicConfig() {
       accountChooserUrl: webAppUrl
         ? 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(webAppUrl) + '&prompt=select_account'
         : '',
-      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' && !!tryOpenDb_(),
+      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
+        !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID),
       identityRequired: !getActiveUserEmail_()
     };
   });
@@ -96,6 +98,22 @@ function apiLogoutSession() {
   return withError_(function () {
     clearCachedSessionEmail_();
     return { ok: true };
+  });
+}
+
+/** Fast — clears stale Drive/DB pointers after a manual wipe (no Drive I/O). */
+function apiResetStaleLinks() {
+  return withError_(function () {
+    clearCachedSessionEmail_();
+    var props = getScriptProps_();
+    props.deleteProperty(PROP.DB_SPREADSHEET_ID);
+    props.deleteProperty(PROP.ROOT_FOLDER_ID);
+    props.deleteProperty(PROP.LOGO_FILE_ID);
+    props.setProperty(PROP.SETUP_DONE, '0');
+    return {
+      ok: true,
+      message: 'Cleared saved Drive/DB links. Sign in with the script-owner Gmail, then Create Drive folders & database.'
+    };
   });
 }
 

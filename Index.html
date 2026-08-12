@@ -26,9 +26,9 @@
       </div>
     </header>
 
-    <section id="authBanner" class="auth-banner login-only" hidden>
+    <section id="authBanner" class="auth-banner login-only panel">
       <h2>Sign in</h2>
-      <p id="authBannerText"></p>
+      <p id="authBannerText">Enter your roster Gmail. Only registered users can sign in. After a Drive wipe, use the group Gmail that owns the script, then recreate folders in Setup.</p>
       <div class="login-box">
         <div class="field">
           <label for="loginEmail">Your roster Gmail</label>
@@ -44,6 +44,7 @@
         <div class="actions-row">
           <button type="button" class="btn primary" id="btnVerifyLoginCode">Verify &amp; continue</button>
           <button type="button" class="btn secondary" id="btnRetryAuth">Try again</button>
+          <button type="button" class="btn secondary" id="btnClearSession">Clear session</button>
         </div>
         <p id="loginMsg" class="msg" hidden></p>
       </div>
