@@ -31,6 +31,8 @@ function ensureDb_() {
   if (!ss) {
     ss = SpreadsheetApp.create(DB_SHEET_NAME);
     props.setProperty(PROP.DB_SPREADSHEET_ID, ss.getId());
+    // Old Drive/DB was deleted — treat as fresh setup so roles can be saved again
+    props.setProperty(PROP.SETUP_DONE, '0');
   }
   ensureSheet_(ss, SHEETS.ROLES, [
     'role', 'name', 'email', 'whatsapp', 'updated_at'
