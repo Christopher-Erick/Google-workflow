@@ -3,11 +3,7 @@
  */
 
 function doGet(e) {
-  try {
-    ensureDb_();
-  } catch (err) {
-    // Still serve UI so users don't hit a blank/Drive-style failure on first paint
-  }
+  // Keep first paint fast: never open/create Drive DB or fetch logo blobs here.
   var template = HtmlService.createTemplateFromFile('Index');
   var webAppUrl = '';
   try { webAppUrl = getWebAppUrl_(); } catch (err) {}
@@ -15,10 +11,7 @@ function doGet(e) {
     try { webAppUrl = ScriptApp.getService().getUrl() || ''; } catch (err2) {}
   }
   webAppUrl = String(webAppUrl || '').replace(/\/macros\/u\/\d+\//, '/macros/');
-  var branding = { orgName: ORG_NAME, slogan: ORG_SLOGAN_DEFAULT, logoDataUrl: '' };
-  try { branding = getBranding_(); } catch (err3) {
-    try { branding.logoDataUrl = getDefaultLogoDataUrl_(); } catch (err4) {}
-  }
+  var branding = getBrandingLight_();
   template.initial = JSON.stringify({
     appName: APP_NAME,
     orgName: ORG_NAME,
@@ -42,7 +35,6 @@ function include(filename) {
 
 function safeContext_() {
   try {
-    ensureDb_();
     var ctx = getUserContext_();
     return {
       email: ctx.email,
@@ -65,7 +57,7 @@ function apiGetPublicConfig() {
       try { webAppUrl = ScriptApp.getService().getUrl() || ''; } catch (e) {}
     }
     webAppUrl = String(webAppUrl || '').replace(/\/macros\/u\/\d+\//, '/macros/');
-    var branding = getBranding_();
+    var branding = getBrandingLight_();
     return {
       appName: APP_NAME,
       orgName: ORG_NAME,
@@ -74,7 +66,7 @@ function apiGetPublicConfig() {
       accountChooserUrl: webAppUrl
         ? 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(webAppUrl) + '&prompt=select_account'
         : '',
-      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1',
+      setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' && !!tryOpenDb_(),
       identityRequired: !getActiveUserEmail_()
     };
   });
@@ -109,7 +101,6 @@ function apiLogoutSession() {
 
 function apiGetBootstrap() {
   return withError_(function () {
-    ensureDb_();
     var ctx = requireKnownUser_();
     var setup = getSetupState_();
     var items = [];

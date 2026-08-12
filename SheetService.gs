@@ -11,27 +11,48 @@ var SHEETS = {
   SETTINGS: 'Settings'
 };
 
-function getDb_() {
-  var id = getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
-  if (!id) throw new Error('Database not initialized. Run Setup first.');
-  return SpreadsheetApp.openById(id);
+function clearStaleDbId_() {
+  var props = getScriptProps_();
+  props.deleteProperty(PROP.DB_SPREADSHEET_ID);
+  props.setProperty(PROP.SETUP_DONE, '0');
 }
 
-function ensureDb_() {
+/**
+ * Open existing DB if the stored file still exists. Never creates.
+ * Clears stale IDs when Drive/Sheet was deleted from the trash.
+ */
+function tryOpenDb_() {
   var props = getScriptProps_();
   var id = props.getProperty(PROP.DB_SPREADSHEET_ID);
-  var ss;
-  if (id) {
-    try {
-      ss = SpreadsheetApp.openById(id);
-    } catch (e) {
-      ss = null;
+  if (!id) return null;
+  try {
+    var file = DriveApp.getFileById(id);
+    if (file.isTrashed()) {
+      clearStaleDbId_();
+      return null;
     }
+    return SpreadsheetApp.openById(id);
+  } catch (e) {
+    clearStaleDbId_();
+    return null;
   }
+}
+
+function getDb_() {
+  var ss = tryOpenDb_();
+  if (!ss) throw new Error('Database not initialized. Open Setup and click Create Drive folders & database.');
+  return ss;
+}
+
+/**
+ * Open DB or create a fresh one. Use only from Setup / save / workflow writes.
+ */
+function ensureDb_() {
+  var props = getScriptProps_();
+  var ss = tryOpenDb_();
   if (!ss) {
     ss = SpreadsheetApp.create(DB_SHEET_NAME);
     props.setProperty(PROP.DB_SPREADSHEET_ID, ss.getId());
-    // Old Drive/DB was deleted — treat as fresh setup so roles can be saved again
     props.setProperty(PROP.SETUP_DONE, '0');
   }
   ensureSheet_(ss, SHEETS.ROLES, [

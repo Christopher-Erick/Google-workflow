@@ -3,7 +3,15 @@
  */
 
 function getRoleMap_() {
-  var rows = sheetToObjects_(getDb_().getSheetByName(SHEETS.ROLES));
+  var ss = tryOpenDb_();
+  if (!ss) {
+    var empty = {};
+    OFFICER_ROLES.forEach(function (role) {
+      empty[role] = { name: '', email: '', whatsapp: '' };
+    });
+    return empty;
+  }
+  var rows = sheetToObjects_(ss.getSheetByName(SHEETS.ROLES));
   var map = {};
   OFFICER_ROLES.forEach(function (role) {
     map[role] = { name: '', email: '', whatsapp: '' };
@@ -21,8 +29,9 @@ function getRoleMap_() {
 }
 
 function listMembers_() {
-  ensureDb_();
-  return sheetToObjects_(getDb_().getSheetByName(SHEETS.MEMBERS)).map(function (m) {
+  var ss = tryOpenDb_();
+  if (!ss) return [];
+  return sheetToObjects_(ss.getSheetByName(SHEETS.MEMBERS)).map(function (m) {
     return {
       name: String(m.name || '').trim(),
       email: String(m.email || '').trim().toLowerCase(),
@@ -102,6 +111,9 @@ function isEmailOnRoster_(email) {
   email = String(email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') < 0) return false;
   var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
+  if (setupDone && !tryOpenDb_()) {
+    setupDone = false;
+  }
   if (!setupDone) {
     // Before setup is finished, only the script owner (group Gmail) may enter Setup.
     var owner = getScriptOwnerEmail_();
@@ -148,7 +160,7 @@ function requestLoginCode_(email) {
   if (!email || email.indexOf('@') < 0) {
     throw new Error('Enter a valid Gmail address.');
   }
-  ensureDb_();
+  // Do not create the DB just to send a code — that made login very slow after a wipe.
   if (!isEmailOnRoster_(email)) {
     throw new Error('That email is not on the SHE roster. Ask Admin to add it in Setup first.');
   }
@@ -171,7 +183,6 @@ function verifyLoginCode_(email, code) {
   email = String(email || '').trim().toLowerCase();
   code = String(code || '').trim();
   if (!email || !code) throw new Error('Email and code are required.');
-  ensureDb_();
   if (!isEmailOnRoster_(email)) {
     throw new Error('That email is not on the SHE roster.');
   }
@@ -184,12 +195,11 @@ function verifyLoginCode_(email, code) {
   if (!setCachedSessionEmail_(email)) {
     throw new Error('Could not create a browser session. Try Incognito or a single-account Chrome profile.');
   }
-  audit_('', 'otp_login', email, {});
+  try { audit_('', 'otp_login', email, {}); } catch (eAudit) {}
   return getUserContext_();
 }
 
 function getUserContext_() {
-  ensureDb_();
   var email = getActiveUserEmail_();
   var roles = getRoleMap_();
   var myRoles = [];
@@ -206,6 +216,10 @@ function getUserContext_() {
   var isAdmin = !!(roles.admin && roles.admin.email && roles.admin.email === email);
 
   var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1';
+  // If setup was marked done but DB was deleted, treat as not done.
+  if (setupDone && !tryOpenDb_()) {
+    setupDone = false;
+  }
   var known = myRoles.length > 0;
   // Before setup completes, allow the deploying user in
   if (!setupDone) known = true;

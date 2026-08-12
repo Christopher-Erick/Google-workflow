@@ -9,11 +9,13 @@ function ensureDriveTree_() {
   if (rootId) {
     try {
       root = DriveApp.getFolderById(rootId);
+      if (root.isTrashed()) root = null;
     } catch (e) {
       root = null;
     }
   }
   if (!root) {
+    if (rootId) props.deleteProperty(PROP.ROOT_FOLDER_ID);
     // Prefer agreed name; fall back to older singular name if already present
     root = findFolderByName_(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
     if (!root) {
@@ -31,11 +33,8 @@ function ensureDriveTree_() {
   ensureTypeTree_(root, 'Minutes');
   ensureTypeTree_(root, 'Proof of Payment');
 
-  try {
-    shareFolderWithRoster_(root);
-  } catch (e) {
-    console.error('shareFolderWithRoster_ failed: ' + e.message);
-  }
+  // Do NOT share with roster here — sharing every page load is very slow.
+  // Sharing runs from Setup (Create / Save roles).
 
   return root;
 }

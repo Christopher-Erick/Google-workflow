@@ -4,7 +4,8 @@
 
 function runInitialSetup() {
   ensureDb_();
-  ensureDriveTree_();
+  var root = ensureDriveTree_();
+  try { shareFolderWithRoster_(root); } catch (e) {}
   ensureReminderTrigger_();
   return {
     ok: true,
@@ -150,10 +151,15 @@ function getLogoDataUrl_() {
   var id = getScriptProps_().getProperty(PROP.LOGO_FILE_ID);
   if (id) {
     try {
-      var blob = DriveApp.getFileById(id).getBlob();
-      return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
+      var file = DriveApp.getFileById(id);
+      if (file.isTrashed()) {
+        getScriptProps_().deleteProperty(PROP.LOGO_FILE_ID);
+      } else {
+        var blob = file.getBlob();
+        return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
+      }
     } catch (e) {
-      // fall through to bundled logo
+      getScriptProps_().deleteProperty(PROP.LOGO_FILE_ID);
     }
   }
   try {
@@ -161,6 +167,19 @@ function getLogoDataUrl_() {
   } catch (e2) {
     return '';
   }
+}
+
+/** Fast branding for page load — skips Drive logo fetch */
+function getBrandingLight_() {
+  var slogan = getScriptProps_().getProperty(PROP.ORG_SLOGAN) || ORG_SLOGAN_DEFAULT;
+  var logo = '';
+  try { logo = getDefaultLogoDataUrl_(); } catch (e) {}
+  return {
+    orgName: ORG_NAME,
+    slogan: slogan,
+    logoDataUrl: logo,
+    logoFileId: ''
+  };
 }
 
 function getBranding_() {
@@ -174,7 +193,6 @@ function getBranding_() {
 }
 
 function getSetupState_() {
-  ensureDb_();
   var ctx = getUserContext_();
   var roleMap = getRoleMap_();
   var roles = {};
@@ -182,15 +200,19 @@ function getSetupState_() {
     roles[r] = roleMap[r] || { name: '', email: '', whatsapp: '' };
   });
   var webAppUrl = getWebAppUrl_();
+  var members = [];
+  try {
+    members = listMembers_().map(function (m) {
+      return { name: m.name, email: m.email, whatsapp: m.whatsapp };
+    });
+  } catch (e) {}
   return {
-    setupDone: getScriptProps_().getProperty(PROP.SETUP_DONE) === '1',
+    setupDone: ctx.setupDone,
     roles: roles,
     roleLabels: ROLE_LABELS,
     officerRoles: OFFICER_ROLES,
-    members: listMembers_().map(function (m) {
-      return { name: m.name, email: m.email, whatsapp: m.whatsapp };
-    }),
-    branding: getBranding_(),
+    members: members,
+    branding: getBrandingLight_(),
     whatsappMode: getScriptProps_().getProperty(PROP.WHATSAPP_MODE) || 'off',
     whatsappWebhookUrl: getScriptProps_().getProperty(PROP.WHATSAPP_WEBHOOK_URL) || '',
     rootFolderId: getScriptProps_().getProperty(PROP.ROOT_FOLDER_ID) || '',
