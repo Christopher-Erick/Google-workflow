@@ -3,76 +3,123 @@
  */
 
 /**
- * Send notification mail. Uses MailApp (same path as OTP login codes).
- * Tries one BCC message first (fast on submit); falls back per-recipient
- * so one bad address cannot block everyone.
+ * Remaining MailApp quota (consumer Gmail ~100/day).  -1 if unknown.
+ */
+function getMailQuotaRemaining_() {
+  try {
+    return MailApp.getRemainingDailyQuota();
+  } catch (e) {
+    return -1;
+  }
+}
+
+/**
+ * Core send — same MailApp path as OTP login codes.
+ * Urgent: one message per recipient (reliable).
+ * FYI: one message with BCC (saves quota); falls back per-recipient.
  */
 function sendMail_(toList, subject, htmlBody, urgent) {
   var recipients = uniqueEmails_(toList).filter(function (e) {
-    return e.indexOf('@') > 0;
+    return e.indexOf('@') > 0 && e.indexOf(' ') < 0;
   });
-  if (!recipients.length) {
-    console.error('sendMail_: no recipients for "' + subject + '"');
-    try {
-      audit_('', 'mail_skipped_no_recipients', '', { subject: String(subject || '') });
-    } catch (eA) {}
-    return { sent: 0, failed: [] };
-  }
-
   var fullSubject = String(subject || '');
   if (urgent && fullSubject.indexOf('[URGENT]') !== 0) {
     fullSubject = '[URGENT] ' + fullSubject;
+  }
+  var plain = stripHtml_(htmlBody);
+  var quota = getMailQuotaRemaining_();
+
+  if (!recipients.length) {
+    recordMailStatus_(fullSubject, 0, 0, ['no recipients'], quota);
+    try {
+      audit_('', 'mail_skipped_no_recipients', '', { subject: fullSubject });
+    } catch (eA) {}
+    return { sent: 0, failed: ['no recipients'], quota: quota };
+  }
+
+  if (quota === 0) {
+    var qFail = ['MailApp daily quota is 0 — group Gmail cannot send more mail today'];
+    recordMailStatus_(fullSubject, recipients.length, 0, qFail, quota);
+    try {
+      audit_('', 'mail_quota_exhausted', '', { subject: fullSubject });
+    } catch (eQ) {}
+    return { sent: 0, failed: qFail, quota: quota };
   }
 
   var sent = 0;
   var failed = [];
 
-  // Fast path: one message (to first, BCC rest) — needed so submit does not time out
-  if (recipients.length > 1) {
-    try {
-      MailApp.sendEmail({
-        to: recipients[0],
-        bcc: recipients.slice(1).join(','),
-        subject: fullSubject,
-        htmlBody: htmlBody,
-        name: APP_NAME
-      });
-      recordMailStatus_(fullSubject, recipients.length, recipients.length, []);
-      return { sent: recipients.length, failed: [] };
-    } catch (eBcc) {
-      console.error('sendMail_ BCC failed, falling back: ' + (eBcc.message || eBcc));
-    }
-  }
-
-  recipients.forEach(function (to) {
+  function sendOne_(to) {
+    // Match OTP login exactly first (most reliable)
     try {
       MailApp.sendEmail({
         to: to,
         subject: fullSubject,
+        body: plain,
         htmlBody: htmlBody,
         name: APP_NAME
       });
-      sent++;
-    } catch (eMail) {
-      var msg = String((eMail && eMail.message) || eMail);
-      failed.push(to + ': ' + msg);
-      console.error('sendMail_ failed for ' + to + ': ' + msg);
+      return true;
+    } catch (e1) {
       try {
-        GmailApp.sendEmail(to, fullSubject, stripHtml_(htmlBody), {
+        GmailApp.sendEmail(to, fullSubject, plain, {
           htmlBody: htmlBody,
           name: APP_NAME
         });
-        sent++;
-        failed.pop();
-      } catch (eGmail) {
-        failed[failed.length - 1] =
-          to + ': ' + msg + ' / gmail: ' + String((eGmail && eGmail.message) || eGmail);
+        return true;
+      } catch (e2) {
+        failed.push(to + ': ' + String((e1 && e1.message) || e1) + ' / ' + String((e2 && e2.message) || e2));
+        return false;
       }
     }
-  });
+  }
 
-  recordMailStatus_(fullSubject, recipients.length, sent, failed);
+  if (urgent || recipients.length === 1) {
+    recipients.forEach(function (to) {
+      if (sendOne_(to)) sent++;
+    });
+  } else {
+    // FYI: one BCC send to save quota
+    var primary = recipients[0];
+    var bccList = recipients.slice(1);
+    var bccOk = false;
+    try {
+      MailApp.sendEmail({
+        to: primary,
+        bcc: bccList.join(','),
+        subject: fullSubject,
+        body: plain,
+        htmlBody: htmlBody,
+        name: APP_NAME
+      });
+      sent = recipients.length;
+      bccOk = true;
+    } catch (eBcc) {
+      try {
+        GmailApp.sendEmail(primary, fullSubject, plain, {
+          htmlBody: htmlBody,
+          name: APP_NAME,
+          bcc: bccList.join(',')
+        });
+        sent = recipients.length;
+        bccOk = true;
+      } catch (eBcc2) {
+        console.error('BCC mail failed, sending individually: ' + (eBcc2.message || eBcc2));
+      }
+    }
+    if (!bccOk) {
+      // Cap individual FYI sends so submit does not hang / exhaust quota
+      var cap = Math.min(recipients.length, 25);
+      for (var i = 0; i < cap; i++) {
+        if (sendOne_(recipients[i])) sent++;
+      }
+      if (recipients.length > cap) {
+        failed.push('FYI truncated: ' + (recipients.length - cap) + ' not sent (quota/speed cap)');
+      }
+    }
+  }
 
+  recordMailStatus_(fullSubject, recipients.length, sent, failed, getMailQuotaRemaining_());
   if (failed.length) {
     try {
       audit_('', 'mail_partial_failure', '', {
@@ -82,11 +129,10 @@ function sendMail_(toList, subject, htmlBody, urgent) {
       });
     } catch (eAud) {}
   }
-
-  return { sent: sent, failed: failed };
+  return { sent: sent, failed: failed, quota: getMailQuotaRemaining_() };
 }
 
-function recordMailStatus_(subject, recipientCount, sent, failed) {
+function recordMailStatus_(subject, recipientCount, sent, failed, quota) {
   try {
     getScriptProps_().setProperty(
       PROP.LAST_MAIL_STATUS,
@@ -95,7 +141,8 @@ function recordMailStatus_(subject, recipientCount, sent, failed) {
         subject: subject,
         recipientCount: recipientCount,
         sent: sent,
-        failed: (failed || []).slice(0, 8)
+        failed: (failed || []).slice(0, 8),
+        quota: quota
       })
     );
   } catch (eProp) {}
@@ -111,6 +158,23 @@ function getLastMailStatus_() {
   }
 }
 
+function summarizeMailResults_(parts) {
+  var sent = 0;
+  var failed = [];
+  (parts || []).forEach(function (p) {
+    if (!p) return;
+    sent += Number(p.sent || 0);
+    (p.failed || []).forEach(function (f) { failed.push(f); });
+  });
+  var quota = getMailQuotaRemaining_();
+  var msg =
+    'Mail: ' + sent + ' delivered' +
+    (failed.length ? ('; ' + failed.length + ' failed') : '') +
+    (quota >= 0 ? ('; quota left today ' + quota) : '');
+  if (failed.length) msg += ' — ' + failed.slice(0, 3).join('; ');
+  return { sent: sent, failed: failed, quota: quota, message: msg };
+}
+
 /**
  * Admin/self-check: send one test message to the signed-in roster email.
  */
@@ -118,21 +182,35 @@ function sendTestNotificationMail_(toEmail) {
   var ctx = requireKnownUser_();
   var to = String(toEmail || ctx.email || '').trim().toLowerCase();
   if (!to || to.indexOf('@') < 0) throw new Error('Enter a valid email to test.');
+  var quota = getMailQuotaRemaining_();
+  if (quota === 0) {
+    throw new Error(
+      'Group Gmail mail quota is used up for today (0 remaining). Wait until tomorrow or use a Google Workspace account with higher limits.'
+    );
+  }
   var result = sendMail_(
     [to],
     '[' + APP_NAME + '] Test notification',
     '<p>This is a test email from <b>' + esc_(APP_NAME) + '</b>.</p>' +
-      '<p>If you received this, stage approval emails can send from the group Gmail that owns the script.</p>' +
-      '<p>Requested by: ' + esc_(ctx.email) + '</p>',
+      '<p>If you received this, notification mail works from the account that owns the script.</p>' +
+      '<p>Requested by: ' + esc_(ctx.email) + '</p>' +
+      '<p>Quota remaining after send: check Setup → last mail status.</p>',
     false
   );
   if (!result.sent) {
     throw new Error(
-      'Test email failed to send. ' +
-      (result.failed && result.failed.length ? result.failed.join('; ') : 'Check group Gmail authorization / daily quota.')
+      'Test email failed. ' +
+      (result.failed && result.failed.length ? result.failed.join('; ') : 'Unknown error') +
+      (quota >= 0 ? (' Quota before send: ' + quota) : '')
     );
   }
-  return { ok: true, to: to, sent: result.sent, lastMailStatus: getLastMailStatus_() };
+  return {
+    ok: true,
+    to: to,
+    sent: result.sent,
+    quota: getMailQuotaRemaining_(),
+    lastMailStatus: getLastMailStatus_()
+  };
 }
 
 function uniqueEmails_(list) {
@@ -150,14 +228,12 @@ function stripHtml_(html) {
 
 /**
  * Notify by email and WhatsApp (when configured).
- * WhatsApp modes:
- *  - off: email only
- *  - webhook: GET/POST WHATSAPP_WEBHOOK_URL with {{phone}} and {{text}} placeholders
  */
 function notifyChannels_(emails, phones, subject, htmlBody, urgent) {
-  sendMail_(emails, subject, htmlBody, urgent);
+  var mailResult = sendMail_(emails, subject, htmlBody, urgent);
   var text = (urgent ? '[URGENT] ' : '') + subject + '\n\n' + stripHtml_(htmlBody);
   sendWhatsAppBulk_(phones, text);
+  return mailResult;
 }
 
 function sendWhatsAppBulk_(phones, text) {
@@ -240,26 +316,6 @@ function stageProgressText_(item) {
   return prev + ' approved — waiting on ' + cur;
 }
 
-/** Non-officer members from the Members sheet (Setup → members list). */
-function memberNotificationEmails_() {
-  return listMembers_().map(function (m) {
-    return m.email;
-  }).filter(function (e) {
-    return !!e;
-  });
-}
-
-function memberNotificationPhones_() {
-  return listMembers_().map(function (m) {
-    return normalizePhone_(m.whatsapp);
-  }).filter(function (p) {
-    return !!p;
-  });
-}
-
-/**
- * Everyone who should get status FYI: all officers + members.
- */
 function fyiRecipients_(roleMap) {
   return allNotificationEmails_(roleMap || getRoleMap_());
 }
@@ -269,10 +325,10 @@ function fyiPhones_(roleMap) {
 }
 
 /**
- * On submit and after each stage advance while still pending:
- *  1) FYI to officers + members — submitted / waiting on next approver
- *  2) Urgent to the current-stage approver only
- * Continues until fully approved (then one final FYI, no urgent).
+ * On submit:
+ *  1) FYI to officers + members — submitted, waiting approval
+ *  2) Urgent to current-stage approver
+ * Same pattern continues on each stage until fully approved.
  */
 function notifySubmitted_(item, ctx) {
   var roleMap = ctx.roleMap || getRoleMap_();
@@ -281,9 +337,10 @@ function notifySubmitted_(item, ctx) {
   var url = getWebAppUrl_();
   var submitterName = displayNameForEmail_(item.submitter_email, roleMap);
   var waitingName = item.current_stage_role ? displayNameForRole_(item.current_stage_role, roleMap) : '';
+  var results = [];
 
   if (item.status === ITEM_STATUS.APPROVED) {
-    notifyChannels_(
+    results.push(notifyChannels_(
       fyiRecipients_(roleMap),
       fyiPhones_(roleMap),
       '[' + APP_NAME + '] ' + def.label + ' fully approved: ' + item.title,
@@ -291,39 +348,44 @@ function notifySubmitted_(item, ctx) {
         '<p><b>Submitted by:</b> ' + esc_(submitterName) + '</p>' +
         '<p><a href="' + url + '">Open workflow</a></p>',
       false
-    );
-    return;
+    ));
+    return summarizeMailResults_(results);
   }
 
-  var fyiHtml =
-    '<p>A new <b>' + def.label + '</b> has been <b>submitted</b> and is waiting for approval.</p>' +
-    '<p><b>Title:</b> ' + esc_(item.title) + '<br>' +
-    '<b>Submitted by:</b> ' + esc_(submitterName) + ' &lt;' + esc_(item.submitter_email) + '&gt;<br>' +
-    '<b>Status:</b> ' + esc_(progress) +
-    (waitingName ? '<br><b>Waiting on:</b> ' + esc_(waitingName) : '') +
-    '</p>' +
-    '<p><a href="' + url + '">Open workflow</a></p>';
-  notifyChannels_(
+  results.push(notifyChannels_(
     fyiRecipients_(roleMap),
     fyiPhones_(roleMap),
     '[' + APP_NAME + '] New ' + def.label + ' submitted — waiting approval: ' + item.title,
-    fyiHtml,
+    '<p>A new <b>' + def.label + '</b> has been <b>submitted</b> and is waiting for approval.</p>' +
+      '<p><b>Title:</b> ' + esc_(item.title) + '<br>' +
+      '<b>Submitted by:</b> ' + esc_(submitterName) + ' &lt;' + esc_(item.submitter_email) + '&gt;<br>' +
+      '<b>Status:</b> ' + esc_(progress) +
+      (waitingName ? '<br><b>Waiting on:</b> ' + esc_(waitingName) : '') +
+      '</p>' +
+      '<p><a href="' + url + '">Open workflow</a></p>',
     false
-  );
+  ));
 
   if (item.status === ITEM_STATUS.PENDING && item.current_stage_role) {
-    notifyChannels_(
-      emailsForRoles_(roleMap, [item.current_stage_role]),
-      phonesForRoles_(roleMap, [item.current_stage_role]),
-      'Approve ' + def.label + ': ' + item.title,
-      '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + ':</b> Please review and approve or decline.</p>' +
-        '<p><b>' + def.label + ':</b> ' + esc_(item.title) + '<br>' +
-        '<b>Submitted by:</b> ' + esc_(submitterName) + '<br>' +
-        '<b>Status:</b> ' + esc_(progress) + '</p>' +
-        '<p><a href="' + url + '">Review now</a></p>',
-      true
-    );
+    var urgentTo = emailsForRoles_(roleMap, [item.current_stage_role]);
+    if (!urgentTo.length) {
+      results.push({ sent: 0, failed: ['No email set in Setup for role: ' + item.current_stage_role] });
+    } else {
+      results.push(notifyChannels_(
+        urgentTo,
+        phonesForRoles_(roleMap, [item.current_stage_role]),
+        'Approve ' + def.label + ': ' + item.title,
+        '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + ':</b> Please review and approve or decline.</p>' +
+          '<p><b>' + def.label + ':</b> ' + esc_(item.title) + '<br>' +
+          '<b>Submitted by:</b> ' + esc_(submitterName) + '<br>' +
+          '<b>Status:</b> ' + esc_(progress) + '</p>' +
+          '<p><a href="' + url + '">Review now</a></p>',
+        true
+      ));
+    }
   }
+
+  return summarizeMailResults_(results);
 }
 
 function notifyStageUpdate_(item, actorEmail, action) {
@@ -335,9 +397,10 @@ function notifyStageUpdate_(item, actorEmail, action) {
   var waitingName = item.current_stage_role ? displayNameForRole_(item.current_stage_role, roleMap) : '';
   var fyi = fyiRecipients_(roleMap);
   var fyiPhone = fyiPhones_(roleMap);
+  var results = [];
 
   if (action === 'declined') {
-    notifyChannels_(
+    results.push(notifyChannels_(
       fyi,
       fyiPhone,
       '[' + APP_NAME + '] ' + def.label + ' declined: ' + item.title,
@@ -347,12 +410,12 @@ function notifyStageUpdate_(item, actorEmail, action) {
         '<p>The process has been terminated. The submitter may reopen or submit a new item.</p>' +
         '<p><a href="' + url + '">Open workflow</a></p>',
       false
-    );
-    return;
+    ));
+    return summarizeMailResults_(results);
   }
 
   if (action === 'approved_final') {
-    notifyChannels_(
+    results.push(notifyChannels_(
       fyi,
       fyiPhone,
       '[' + APP_NAME + '] ' + def.label + ' fully approved: ' + item.title,
@@ -360,12 +423,12 @@ function notifyStageUpdate_(item, actorEmail, action) {
         '<p><b>Last recorded approver:</b> ' + esc_(actorName) + '</p>' +
         '<p><a href="' + item.file_url + '">View document</a> · <a href="' + url + '">Open workflow</a></p>',
       false
-    );
-    return;
+    ));
+    return summarizeMailResults_(results);
   }
 
   if (action === 'reset') {
-    notifyChannels_(
+    results.push(notifyChannels_(
       fyi,
       fyiPhone,
       '[' + APP_NAME + '] ' + def.label + ' reset after edit: ' + item.title,
@@ -375,21 +438,21 @@ function notifyStageUpdate_(item, actorEmail, action) {
         '<b>Status:</b> ' + esc_(progress) + '</p>' +
         '<p><a href="' + url + '">Open workflow</a></p>',
       false
-    );
+    ));
     if (item.status === ITEM_STATUS.PENDING && item.current_stage_role) {
-      notifyChannels_(
+      results.push(notifyChannels_(
         emailsForRoles_(roleMap, [item.current_stage_role]),
         phonesForRoles_(roleMap, [item.current_stage_role]),
         'Re-approve after edit: ' + item.title,
         '<p>Approvals were reset. Please review again.</p><p><a href="' + url + '">Review now</a></p>',
         true
-      );
+      ));
     }
-    return;
+    return summarizeMailResults_(results);
   }
 
-  // Mid-stage approval: FYI everyone (still waiting) + urgent to next approver
-  notifyChannels_(
+  // Mid-stage: FYI everyone + urgent to next approver
+  results.push(notifyChannels_(
     fyi,
     fyiPhone,
     '[' + APP_NAME + '] ' + progress + ' — ' + item.title,
@@ -400,19 +463,26 @@ function notifyStageUpdate_(item, actorEmail, action) {
       '</p>' +
       '<p><a href="' + url + '">Open workflow</a></p>',
     false
-  );
+  ));
 
   if (item.status === ITEM_STATUS.PENDING && item.current_stage_role) {
-    notifyChannels_(
-      emailsForRoles_(roleMap, [item.current_stage_role]),
-      phonesForRoles_(roleMap, [item.current_stage_role]),
-      'Your approval needed: ' + item.title,
-      '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + '.</b></p>' +
-        '<p>' + esc_(progress) + '</p>' +
-        '<p><a href="' + url + '">Review now</a></p>',
-      true
-    );
+    var urgentTo = emailsForRoles_(roleMap, [item.current_stage_role]);
+    if (!urgentTo.length) {
+      results.push({ sent: 0, failed: ['No email set in Setup for role: ' + item.current_stage_role] });
+    } else {
+      results.push(notifyChannels_(
+        urgentTo,
+        phonesForRoles_(roleMap, [item.current_stage_role]),
+        'Your approval needed: ' + item.title,
+        '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + '.</b></p>' +
+          '<p>' + esc_(progress) + '</p>' +
+          '<p><a href="' + url + '">Review now</a></p>',
+        true
+      ));
+    }
   }
+
+  return summarizeMailResults_(results);
 }
 
 function notifyReminder_(item) {

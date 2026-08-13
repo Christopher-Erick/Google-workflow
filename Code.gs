@@ -189,7 +189,7 @@ function apiListItems(filter) {
 
 function apiSubmitItem(payload) {
   return withError_(function () {
-    return { item: submitItem_(payload) };
+    return submitItem_(payload);
   });
 }
 

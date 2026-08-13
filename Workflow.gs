@@ -103,12 +103,21 @@ function submitItem_(payload) {
   }
 
   audit_(id, 'submitted', ctx.email, { type: typeKey, title: title, autoApproved: stage.autoApproved });
+  var mail = { sent: 0, failed: [], message: 'Mail not attempted' };
   try {
-    notifySubmitted_(item, ctx);
+    mail = notifySubmitted_(item, ctx) || mail;
   } catch (eNotify) {
     console.error('notifySubmitted_ failed: ' + (eNotify.message || eNotify));
+    mail = {
+      sent: 0,
+      failed: [String(eNotify.message || eNotify)],
+      message: 'Mail error: ' + String(eNotify.message || eNotify)
+    };
   }
-  return enrichItem_(findById_(SHEETS.ITEMS, id), ctx);
+  return {
+    item: enrichItem_(findById_(SHEETS.ITEMS, id), ctx),
+    mail: mail
+  };
 }
 
 function approveItem_(itemId, note) {

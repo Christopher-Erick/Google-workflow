@@ -160,6 +160,11 @@
     var mailEl = $('lastMailStatus');
     if (mailEl) {
       var st = setup.lastMailStatus;
+      var quotaBit = '';
+      try {
+        // quota embedded in last status when available
+        if (st && st.quota != null && st.quota >= 0) quotaBit = ' · quota left: ' + st.quota;
+      } catch (eQ) {}
       if (st && st.at) {
         mailEl.hidden = false;
         var failBit = (st.failed && st.failed.length)
@@ -167,7 +172,7 @@
           : '';
         mailEl.textContent =
           'Last mail: ' + st.sent + '/' + (st.recipientCount || '?') +
-          ' sent — ' + (st.subject || '') + ' @ ' + st.at + failBit;
+          ' sent — ' + (st.subject || '') + ' @ ' + st.at + quotaBit + failBit;
       } else {
         mailEl.hidden = true;
         mailEl.textContent = '';
@@ -776,12 +781,19 @@
               mimeType: filePayload.mimeType
             });
           })
-          .then(function () {
-            setMsg($('submitMsg'), 'Submitted. Notifications sent.', true);
+          .then(function (res) {
+            var mailMsg = (res && res.mail && res.mail.message) ? res.mail.message : '';
+            var okMail = res && res.mail && Number(res.mail.sent) > 0;
+            setMsg(
+              $('submitMsg'),
+              okMail
+                ? ('Submitted. ' + mailMsg)
+                : ('Submitted, but mail may have failed. ' + (mailMsg || 'Use Setup → Send test email.')),
+              okMail
+            );
             $('submitForm').reset();
-            return run('apiGetBootstrap');
+            return refreshItems();
           })
-          .then(applyBootstrap)
           .then(function () { showView('dashboard'); })
           .catch(function (err) { setMsg($('submitMsg'), err.message, false); })
           .then(function () { btn.disabled = false; });
