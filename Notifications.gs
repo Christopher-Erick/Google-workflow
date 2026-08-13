@@ -2,26 +2,137 @@
  * Email + WhatsApp notifications
  */
 
+/**
+ * Send notification mail. Uses MailApp (same path as OTP login codes).
+ * Tries one BCC message first (fast on submit); falls back per-recipient
+ * so one bad address cannot block everyone.
+ */
 function sendMail_(toList, subject, htmlBody, urgent) {
-  var recipients = uniqueEmails_(toList);
-  if (!recipients.length) return;
-  var options = {
-    htmlBody: htmlBody,
-    name: APP_NAME
-  };
-  if (urgent) {
-    options.headers = { 'X-Priority': '1', 'X-MSMail-Priority': 'High', Importance: 'High' };
+  var recipients = uniqueEmails_(toList).filter(function (e) {
+    return e.indexOf('@') > 0;
+  });
+  if (!recipients.length) {
+    console.error('sendMail_: no recipients for "' + subject + '"');
+    try {
+      audit_('', 'mail_skipped_no_recipients', '', { subject: String(subject || '') });
+    } catch (eA) {}
+    return { sent: 0, failed: [] };
   }
+
+  var fullSubject = String(subject || '');
+  if (urgent && fullSubject.indexOf('[URGENT]') !== 0) {
+    fullSubject = '[URGENT] ' + fullSubject;
+  }
+
+  var sent = 0;
+  var failed = [];
+
+  // Fast path: one message (to first, BCC rest) — needed so submit does not time out
+  if (recipients.length > 1) {
+    try {
+      MailApp.sendEmail({
+        to: recipients[0],
+        bcc: recipients.slice(1).join(','),
+        subject: fullSubject,
+        htmlBody: htmlBody,
+        name: APP_NAME
+      });
+      recordMailStatus_(fullSubject, recipients.length, recipients.length, []);
+      return { sent: recipients.length, failed: [] };
+    } catch (eBcc) {
+      console.error('sendMail_ BCC failed, falling back: ' + (eBcc.message || eBcc));
+    }
+  }
+
+  recipients.forEach(function (to) {
+    try {
+      MailApp.sendEmail({
+        to: to,
+        subject: fullSubject,
+        htmlBody: htmlBody,
+        name: APP_NAME
+      });
+      sent++;
+    } catch (eMail) {
+      var msg = String((eMail && eMail.message) || eMail);
+      failed.push(to + ': ' + msg);
+      console.error('sendMail_ failed for ' + to + ': ' + msg);
+      try {
+        GmailApp.sendEmail(to, fullSubject, stripHtml_(htmlBody), {
+          htmlBody: htmlBody,
+          name: APP_NAME
+        });
+        sent++;
+        failed.pop();
+      } catch (eGmail) {
+        failed[failed.length - 1] =
+          to + ': ' + msg + ' / gmail: ' + String((eGmail && eGmail.message) || eGmail);
+      }
+    }
+  });
+
+  recordMailStatus_(fullSubject, recipients.length, sent, failed);
+
+  if (failed.length) {
+    try {
+      audit_('', 'mail_partial_failure', '', {
+        subject: fullSubject,
+        sent: sent,
+        failed: failed.slice(0, 12)
+      });
+    } catch (eAud) {}
+  }
+
+  return { sent: sent, failed: failed };
+}
+
+function recordMailStatus_(subject, recipientCount, sent, failed) {
   try {
-    GmailApp.sendEmail(recipients.join(','), subject, stripHtml_(htmlBody), options);
+    getScriptProps_().setProperty(
+      PROP.LAST_MAIL_STATUS,
+      JSON.stringify({
+        at: new Date().toISOString(),
+        subject: subject,
+        recipientCount: recipientCount,
+        sent: sent,
+        failed: (failed || []).slice(0, 8)
+      })
+    );
+  } catch (eProp) {}
+}
+
+function getLastMailStatus_() {
+  try {
+    var raw = getScriptProps_().getProperty(PROP.LAST_MAIL_STATUS);
+    if (!raw) return null;
+    return JSON.parse(raw);
   } catch (e) {
-    MailApp.sendEmail({
-      to: recipients.join(','),
-      subject: (urgent ? '[URGENT] ' : '') + subject,
-      htmlBody: htmlBody,
-      name: APP_NAME
-    });
+    return null;
   }
+}
+
+/**
+ * Admin/self-check: send one test message to the signed-in roster email.
+ */
+function sendTestNotificationMail_(toEmail) {
+  var ctx = requireKnownUser_();
+  var to = String(toEmail || ctx.email || '').trim().toLowerCase();
+  if (!to || to.indexOf('@') < 0) throw new Error('Enter a valid email to test.');
+  var result = sendMail_(
+    [to],
+    '[' + APP_NAME + '] Test notification',
+    '<p>This is a test email from <b>' + esc_(APP_NAME) + '</b>.</p>' +
+      '<p>If you received this, stage approval emails can send from the group Gmail that owns the script.</p>' +
+      '<p>Requested by: ' + esc_(ctx.email) + '</p>',
+    false
+  );
+  if (!result.sent) {
+    throw new Error(
+      'Test email failed to send. ' +
+      (result.failed && result.failed.length ? result.failed.join('; ') : 'Check group Gmail authorization / daily quota.')
+    );
+  }
+  return { ok: true, to: to, sent: result.sent, lastMailStatus: getLastMailStatus_() };
 }
 
 function uniqueEmails_(list) {
@@ -129,106 +240,176 @@ function stageProgressText_(item) {
   return prev + ' approved — waiting on ' + cur;
 }
 
+/** Non-officer members from the Members sheet (Setup → members list). */
+function memberNotificationEmails_() {
+  return listMembers_().map(function (m) {
+    return m.email;
+  }).filter(function (e) {
+    return !!e;
+  });
+}
+
+function memberNotificationPhones_() {
+  return listMembers_().map(function (m) {
+    return normalizePhone_(m.whatsapp);
+  }).filter(function (p) {
+    return !!p;
+  });
+}
+
+/**
+ * Everyone who should get status FYI: all officers + members.
+ */
+function fyiRecipients_(roleMap) {
+  return allNotificationEmails_(roleMap || getRoleMap_());
+}
+
+function fyiPhones_(roleMap) {
+  return allNotificationPhones_(roleMap || getRoleMap_());
+}
+
+/**
+ * On submit and after each stage advance while still pending:
+ *  1) FYI to officers + members — submitted / waiting on next approver
+ *  2) Urgent to the current-stage approver only
+ * Continues until fully approved (then one final FYI, no urgent).
+ */
 function notifySubmitted_(item, ctx) {
   var roleMap = ctx.roleMap || getRoleMap_();
-  var allEmails = allNotificationEmails_(roleMap);
-  var allPhones = allNotificationPhones_(roleMap);
   var def = getDocType_(item.type);
   var progress = stageProgressText_(item);
   var url = getWebAppUrl_();
   var submitterName = displayNameForEmail_(item.submitter_email, roleMap);
   var waitingName = item.current_stage_role ? displayNameForRole_(item.current_stage_role, roleMap) : '';
-  var html =
-    '<p>A new <b>' + def.label + '</b> has been submitted and is pending approval.</p>' +
+
+  if (item.status === ITEM_STATUS.APPROVED) {
+    notifyChannels_(
+      fyiRecipients_(roleMap),
+      fyiPhones_(roleMap),
+      '[' + APP_NAME + '] ' + def.label + ' fully approved: ' + item.title,
+      '<p>The <b>' + def.label + '</b> <b>' + esc_(item.title) + '</b> was <b>fully approved</b> on submit.</p>' +
+        '<p><b>Submitted by:</b> ' + esc_(submitterName) + '</p>' +
+        '<p><a href="' + url + '">Open workflow</a></p>',
+      false
+    );
+    return;
+  }
+
+  var fyiHtml =
+    '<p>A new <b>' + def.label + '</b> has been <b>submitted</b> and is waiting for approval.</p>' +
     '<p><b>Title:</b> ' + esc_(item.title) + '<br>' +
     '<b>Submitted by:</b> ' + esc_(submitterName) + ' &lt;' + esc_(item.submitter_email) + '&gt;<br>' +
     '<b>Status:</b> ' + esc_(progress) +
     (waitingName ? '<br><b>Waiting on:</b> ' + esc_(waitingName) : '') +
     '</p>' +
     '<p><a href="' + url + '">Open workflow</a></p>';
-
-  notifyChannels_(allEmails, allPhones, '[' + APP_NAME + '] New ' + def.label + ': ' + item.title, html, false);
-
-  var urgentEmails = emailsForRoles_(roleMap, [item.current_stage_role]);
-  var urgentPhones = phonesForRoles_(roleMap, [item.current_stage_role]);
-  var urgentHtml =
-    '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + ':</b> Please review and approve or decline.</p>' +
-    '<p><b>' + def.label + ':</b> ' + esc_(item.title) + '<br>' +
-    '<b>Submitted by:</b> ' + esc_(submitterName) + '<br>' +
-    '<b>Status:</b> ' + esc_(progress) + '</p>' +
-    '<p><a href="' + url + '">Review now</a></p>';
-  notifyChannels_(urgentEmails, urgentPhones, '[URGENT] Approve ' + def.label + ': ' + item.title, urgentHtml, true);
-}
-
-function notifyStageUpdate_(item, actorEmail, action) {
-  var roleMap = getRoleMap_();
-  var allEmails = allNotificationEmails_(roleMap);
-  var allPhones = allNotificationPhones_(roleMap);
-  var def = getDocType_(item.type);
-  var progress = stageProgressText_(item);
-  var url = getWebAppUrl_();
-  var actorName = displayNameForEmail_(actorEmail, roleMap);
-  var subject;
-  var html;
-
-  if (action === 'declined') {
-    subject = '[' + APP_NAME + '] ' + def.label + ' declined: ' + item.title;
-    html =
-      '<p>The <b>' + def.label + '</b> <b>' + esc_(item.title) + '</b> was <b>declined</b>.</p>' +
-      '<p><b>By:</b> ' + esc_(actorName) + ' &lt;' + esc_(actorEmail) + '&gt;<br>' +
-      '<b>Reason:</b> ' + esc_(item.decline_note || '') + '</p>' +
-      '<p>The process has been terminated. The submitter may reopen or submit a new item.</p>' +
-      '<p><a href="' + url + '">Open workflow</a></p>';
-    notifyChannels_(allEmails, allPhones, subject, html, false);
-    return;
-  }
-
-  if (action === 'approved_final') {
-    subject = '[' + APP_NAME + '] ' + def.label + ' fully approved: ' + item.title;
-    html =
-      '<p>The <b>' + def.label + '</b> <b>' + esc_(item.title) + '</b> is <b>fully approved</b>.</p>' +
-      '<p><b>Last recorded approver:</b> ' + esc_(actorName) + '</p>' +
-      '<p><a href="' + item.file_url + '">View document</a> · <a href="' + url + '">Open workflow</a></p>';
-    notifyChannels_(allEmails, allPhones, subject, html, false);
-    return;
-  }
-
-  if (action === 'reset') {
-    subject = '[' + APP_NAME + '] ' + def.label + ' reset after edit: ' + item.title;
-    html =
-      '<p>The document was edited. <b>All prior approvals were reset</b> and the process restarted.</p>' +
-      '<p><b>' + def.label + ':</b> ' + esc_(item.title) + '<br>' +
-      '<b>Edited by:</b> ' + esc_(actorName) + ' &lt;' + esc_(actorEmail) + '&gt;<br>' +
-      '<b>Status:</b> ' + esc_(progress) + '</p>' +
-      '<p><a href="' + url + '">Open workflow</a></p>';
-    notifyChannels_(allEmails, allPhones, subject, html, false);
-    notifyChannels_(
-      emailsForRoles_(roleMap, [item.current_stage_role]),
-      phonesForRoles_(roleMap, [item.current_stage_role]),
-      '[URGENT] Re-approve after edit: ' + item.title,
-      '<p>Approvals were reset. Please review again.</p><p><a href="' + url + '">Review now</a></p>',
-      true
-    );
-    return;
-  }
-
-  var waitingName = item.current_stage_role ? displayNameForRole_(item.current_stage_role, roleMap) : '';
-  subject = '[' + APP_NAME + '] ' + progress + ' — ' + item.title;
-  html =
-    '<p>Approval update for <b>' + esc_(item.title) + '</b> (' + def.label + ').</p>' +
-    '<p><b>Status:</b> ' + esc_(progress) + '<br>' +
-    '<b>Recorded action by:</b> ' + esc_(actorName) + ' &lt;' + esc_(actorEmail) + '&gt;' +
-    (waitingName ? '<br><b>Now waiting on:</b> ' + esc_(waitingName) : '') +
-    '</p>' +
-    '<p><a href="' + url + '">Open workflow</a></p>';
-  notifyChannels_(allEmails, allPhones, subject, html, false);
+  notifyChannels_(
+    fyiRecipients_(roleMap),
+    fyiPhones_(roleMap),
+    '[' + APP_NAME + '] New ' + def.label + ' submitted — waiting approval: ' + item.title,
+    fyiHtml,
+    false
+  );
 
   if (item.status === ITEM_STATUS.PENDING && item.current_stage_role) {
     notifyChannels_(
       emailsForRoles_(roleMap, [item.current_stage_role]),
       phonesForRoles_(roleMap, [item.current_stage_role]),
-      '[URGENT] Your approval needed: ' + item.title,
-      '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + '.</b></p><p>' + esc_(progress) + '</p><p><a href="' + url + '">Review now</a></p>',
+      'Approve ' + def.label + ': ' + item.title,
+      '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + ':</b> Please review and approve or decline.</p>' +
+        '<p><b>' + def.label + ':</b> ' + esc_(item.title) + '<br>' +
+        '<b>Submitted by:</b> ' + esc_(submitterName) + '<br>' +
+        '<b>Status:</b> ' + esc_(progress) + '</p>' +
+        '<p><a href="' + url + '">Review now</a></p>',
+      true
+    );
+  }
+}
+
+function notifyStageUpdate_(item, actorEmail, action) {
+  var roleMap = getRoleMap_();
+  var def = getDocType_(item.type);
+  var progress = stageProgressText_(item);
+  var url = getWebAppUrl_();
+  var actorName = displayNameForEmail_(actorEmail, roleMap);
+  var waitingName = item.current_stage_role ? displayNameForRole_(item.current_stage_role, roleMap) : '';
+  var fyi = fyiRecipients_(roleMap);
+  var fyiPhone = fyiPhones_(roleMap);
+
+  if (action === 'declined') {
+    notifyChannels_(
+      fyi,
+      fyiPhone,
+      '[' + APP_NAME + '] ' + def.label + ' declined: ' + item.title,
+      '<p>The <b>' + def.label + '</b> <b>' + esc_(item.title) + '</b> was <b>declined</b>.</p>' +
+        '<p><b>By:</b> ' + esc_(actorName) + ' &lt;' + esc_(actorEmail) + '&gt;<br>' +
+        '<b>Reason:</b> ' + esc_(item.decline_note || '') + '</p>' +
+        '<p>The process has been terminated. The submitter may reopen or submit a new item.</p>' +
+        '<p><a href="' + url + '">Open workflow</a></p>',
+      false
+    );
+    return;
+  }
+
+  if (action === 'approved_final') {
+    notifyChannels_(
+      fyi,
+      fyiPhone,
+      '[' + APP_NAME + '] ' + def.label + ' fully approved: ' + item.title,
+      '<p>The <b>' + def.label + '</b> <b>' + esc_(item.title) + '</b> is <b>fully approved</b>.</p>' +
+        '<p><b>Last recorded approver:</b> ' + esc_(actorName) + '</p>' +
+        '<p><a href="' + item.file_url + '">View document</a> · <a href="' + url + '">Open workflow</a></p>',
+      false
+    );
+    return;
+  }
+
+  if (action === 'reset') {
+    notifyChannels_(
+      fyi,
+      fyiPhone,
+      '[' + APP_NAME + '] ' + def.label + ' reset after edit: ' + item.title,
+      '<p>The document was edited. <b>All prior approvals were reset</b> and the process restarted.</p>' +
+        '<p><b>' + def.label + ':</b> ' + esc_(item.title) + '<br>' +
+        '<b>Edited by:</b> ' + esc_(actorName) + ' &lt;' + esc_(actorEmail) + '&gt;<br>' +
+        '<b>Status:</b> ' + esc_(progress) + '</p>' +
+        '<p><a href="' + url + '">Open workflow</a></p>',
+      false
+    );
+    if (item.status === ITEM_STATUS.PENDING && item.current_stage_role) {
+      notifyChannels_(
+        emailsForRoles_(roleMap, [item.current_stage_role]),
+        phonesForRoles_(roleMap, [item.current_stage_role]),
+        'Re-approve after edit: ' + item.title,
+        '<p>Approvals were reset. Please review again.</p><p><a href="' + url + '">Review now</a></p>',
+        true
+      );
+    }
+    return;
+  }
+
+  // Mid-stage approval: FYI everyone (still waiting) + urgent to next approver
+  notifyChannels_(
+    fyi,
+    fyiPhone,
+    '[' + APP_NAME + '] ' + progress + ' — ' + item.title,
+    '<p>Approval update for <b>' + esc_(item.title) + '</b> (' + def.label + ').</p>' +
+      '<p><b>Status:</b> ' + esc_(progress) + '<br>' +
+      '<b>Recorded action by:</b> ' + esc_(actorName) + ' &lt;' + esc_(actorEmail) + '&gt;' +
+      (waitingName ? '<br><b>Now waiting on:</b> ' + esc_(waitingName) : '') +
+      '</p>' +
+      '<p><a href="' + url + '">Open workflow</a></p>',
+    false
+  );
+
+  if (item.status === ITEM_STATUS.PENDING && item.current_stage_role) {
+    notifyChannels_(
+      emailsForRoles_(roleMap, [item.current_stage_role]),
+      phonesForRoles_(roleMap, [item.current_stage_role]),
+      'Your approval needed: ' + item.title,
+      '<p><b>Action required' + (waitingName ? ' (' + esc_(waitingName) + ')' : '') + '.</b></p>' +
+        '<p>' + esc_(progress) + '</p>' +
+        '<p><a href="' + url + '">Review now</a></p>',
       true
     );
   }

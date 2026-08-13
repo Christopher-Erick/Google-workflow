@@ -120,8 +120,16 @@
           <label for="webAppUrl">Web app URL</label>
           <input id="webAppUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" />
         </div>
+        <h3 class="section-title">Email delivery</h3>
+        <p class="lede">Stage emails send from the group Gmail that owns this script (same as login codes). Use Test to confirm delivery.</p>
+        <p id="lastMailStatus" class="lede" hidden></p>
         <div class="actions-row">
+          <button type="button" class="btn secondary" id="btnTestMail">Send test email to me</button>
           <button type="button" class="btn primary" id="btnSaveRoles">Save setup</button>
+        </div>
+        <p class="lede" style="margin-top:1rem">Only use this if Drive folders were manually deleted. It does <strong>not</strong> clear a normal login session.</p>
+        <div class="actions-row">
+          <button type="button" class="btn danger" id="btnResetStaleLinks">Reset Drive links (after wipe)</button>
         </div>
         <p id="setupMsg" class="msg" hidden></p>
       </section>
@@ -332,9 +340,9 @@
         if (clearBtn && !clearBtn.getAttribute('data-bound')) {
           clearBtn.setAttribute('data-bound', '1');
           clearBtn.addEventListener('click', function () {
-            msg('Clearing...', true);
-            call('apiResetStaleLinks')
-              .then(function (res) { msg((res && res.message) || 'Cleared. Request a new login code.', true); })
+            msg('Clearing session...', true);
+            call('apiLogoutSession')
+              .then(function () { msg('Session cleared. Request a new login code.', true); })
               .catch(function (err) { msg(err.message || String(err), false); });
           });
         }

@@ -69,8 +69,12 @@ function findExistingDbSpreadsheet_() {
 }
 
 function tryOpenDb_() {
-  return findExistingDbSpreadsheet_();
+  if (typeof _nazDbSsCache !== 'undefined' && _nazDbSsCache) return _nazDbSsCache;
+  _nazDbSsCache = findExistingDbSpreadsheet_();
+  return _nazDbSsCache;
 }
+
+var _nazDbSsCache = null;
 
 function getDb_() {
   var ss = tryOpenDb_();

@@ -96,7 +96,7 @@ function saveUploadedFile_(typeKey, title, version, blob, originalName, mimeType
   if (mimeType) blob.setContentType(mimeType);
   blob.setName(fileName);
   var file = folder.createFile(blob);
-  shareFileWithRoster_(file);
+  // Do not share each file individually — root folder viewers inherit access (much faster).
   return {
     fileId: file.getId(),
     fileUrl: file.getUrl(),
@@ -114,7 +114,6 @@ function moveFileToPath_(fileId, pathParts) {
     parents.next().removeFile(file);
   }
   dest.addFile(file);
-  shareFileWithRoster_(file);
   return dest.getId();
 }
 
@@ -132,8 +131,7 @@ function attachDeclineNote_(fileId, declinedBy, note, itemTitle) {
     'Declined by: ' + (declinedBy || '') + '\n' +
     'When: ' + nowIso_() + '\n\n' +
     'Reason:\n' + (note || '') + '\n';
-  var noteFile = parent.createFile(noteName, body, MimeType.PLAIN_TEXT);
-  shareFileWithRoster_(noteFile);
+  parent.createFile(noteName, body, MimeType.PLAIN_TEXT);
   try {
     file.setDescription(
       'DECLINED by ' + declinedBy + ' on ' + nowIso_() + '\n\n' + note

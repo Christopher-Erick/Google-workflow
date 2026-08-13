@@ -14,7 +14,12 @@
     var timeoutMs = 45000;
     if (args.length && typeof args[args.length - 1] === 'object' && args[args.length - 1] && args[args.length - 1].__timeoutMs) {
       timeoutMs = args.pop().__timeoutMs;
-    } else if (fnName === 'apiSaveRoles' || fnName === 'apiRunInitialSetup' || fnName === 'apiVerifyLoginCode') {
+    } else if (
+      fnName === 'apiSaveRoles' ||
+      fnName === 'apiRunInitialSetup' ||
+      fnName === 'apiVerifyLoginCode' ||
+      fnName === 'apiSubmitItem'
+    ) {
       timeoutMs = 90000;
     }
     return new Promise(function (resolve, reject) {
@@ -151,6 +156,22 @@
     $('webAppUrl').value = setup.webAppUrl || '';
     if (setup.accountChooserUrl) {
       $('accountChooserLink').href = setup.accountChooserUrl;
+    }
+    var mailEl = $('lastMailStatus');
+    if (mailEl) {
+      var st = setup.lastMailStatus;
+      if (st && st.at) {
+        mailEl.hidden = false;
+        var failBit = (st.failed && st.failed.length)
+          ? (' · failures: ' + st.failed.join(' | '))
+          : '';
+        mailEl.textContent =
+          'Last mail: ' + st.sent + '/' + (st.recipientCount || '?') +
+          ' sent — ' + (st.subject || '') + ' @ ' + st.at + failBit;
+      } else {
+        mailEl.hidden = true;
+        mailEl.textContent = '';
+      }
     }
   }
   window.renderSetupForm = renderSetupForm;
@@ -611,13 +632,15 @@
     });
 
     bind('btnClearSession', function () {
-      setMsg($('loginMsg'), 'Clearing…', true);
-      run('apiResetStaleLinks')
-        .then(function (res) {
-          setMsg($('loginMsg'), (res && res.message) || 'Cleared. Request a new login code.', true);
+      setMsg($('loginMsg'), 'Clearing session…', true);
+      run('apiLogoutSession')
+        .then(function () {
+          setMsg($('loginMsg'), 'Session cleared. Enter your roster Gmail and request a new login code.', true);
           showAuthBanner(
-            'Links cleared. First sign in with the group Gmail to Create folders, set Admin to a personal Gmail, Save, then Switch account to that Admin.'
+            'Signed out. Enter your roster Gmail and request a login code. (This does not wipe Setup or the database.)'
           );
+          if ($('loginCode')) $('loginCode').value = '';
+          if ($('userChip')) $('userChip').textContent = 'Signed out';
         })
         .catch(function (err) {
           setMsg($('loginMsg'), err.message || String(err), false);
@@ -663,6 +686,40 @@
         setMsg($('setupMsg'), 'Creating folders & database…', true);
         run('apiRunInitialSetup')
           .then(function (res) { setMsg($('setupMsg'), res.message || 'Ready.', true); })
+          .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
+      });
+    }
+
+    if ($('btnTestMail')) {
+      $('btnTestMail').addEventListener('click', function () {
+        var me = (state.bootstrap && state.bootstrap.user && state.bootstrap.user.email) || '';
+        setMsg($('setupMsg'), 'Sending test email to ' + (me || 'you') + '…', true);
+        run('apiSendTestMail', me)
+          .then(function (res) {
+            setMsg($('setupMsg'), 'Test email sent to ' + (res && res.to ? res.to : me) + '. Check inbox/spam.', true);
+            return run('apiGetBootstrap');
+          })
+          .then(applyBootstrap)
+          .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
+      });
+    }
+
+    if ($('btnResetStaleLinks')) {
+      $('btnResetStaleLinks').addEventListener('click', function () {
+        if (!confirm(
+          'Reset Drive/DB links?\n\n' +
+          'Only do this after a manual Drive wipe. Members will be blocked from login until group Gmail recreates folders and Admin Saves setup again.\n\n' +
+          'For a normal sign-out, use Switch account or Clear session instead.'
+        )) {
+          return;
+        }
+        setMsg($('setupMsg'), 'Resetting links…', true);
+        run('apiResetStaleLinks')
+          .then(function (res) {
+            setMsg($('setupMsg'), (res && res.message) || 'Links cleared.', true);
+            return run('apiGetBootstrap');
+          })
+          .then(applyBootstrap)
           .catch(function (err) { setMsg($('setupMsg'), err.message, false); });
       });
     }

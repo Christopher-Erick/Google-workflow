@@ -16,7 +16,8 @@ var PROP = {
   ORG_SLOGAN: 'ORG_SLOGAN',
   LOGO_FILE_ID: 'LOGO_FILE_ID',
   WHATSAPP_MODE: 'WHATSAPP_MODE',
-  WHATSAPP_WEBHOOK_URL: 'WHATSAPP_WEBHOOK_URL'
+  WHATSAPP_WEBHOOK_URL: 'WHATSAPP_WEBHOOK_URL',
+  LAST_MAIL_STATUS: 'LAST_MAIL_STATUS'
 };
 
 /** Officer roles only — members live on the Members sheet */
@@ -31,10 +32,10 @@ var OFFICER_ROLES = [
 ];
 
 var ROLE_LABELS = {
-  admin: 'Admin (personal Gmail — not group inbox, not Secretary)',
+  admin: 'Admin',
   chair: 'Chair',
   vice_chair: 'Vice Chair',
-  secretary: 'Secretary (not Admin)',
+  secretary: 'Secretary',
   assistant_secretary: 'Assistant Secretary',
   patron: 'Patron',
   treasurer: 'Treasurer'

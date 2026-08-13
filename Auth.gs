@@ -2,13 +2,19 @@
  * Role & permission helpers
  */
 
+/** Request-local caches (Apps Script resets each invocation). */
+var _nazRoleMapCache = null;
+var _nazMembersCache = null;
+
 function getRoleMap_() {
+  if (_nazRoleMapCache) return _nazRoleMapCache;
   var ss = tryOpenDb_();
   if (!ss) {
     var empty = {};
     OFFICER_ROLES.forEach(function (role) {
       empty[role] = { name: '', email: '', whatsapp: '' };
     });
+    _nazRoleMapCache = empty;
     return empty;
   }
   var rows = sheetToObjects_(ss.getSheetByName(SHEETS.ROLES));
@@ -25,13 +31,18 @@ function getRoleMap_() {
       whatsapp: String(r.whatsapp || '').trim()
     };
   });
+  _nazRoleMapCache = map;
   return map;
 }
 
 function listMembers_() {
+  if (_nazMembersCache) return _nazMembersCache;
   var ss = tryOpenDb_();
-  if (!ss) return [];
-  return sheetToObjects_(ss.getSheetByName(SHEETS.MEMBERS)).map(function (m) {
+  if (!ss) {
+    _nazMembersCache = [];
+    return _nazMembersCache;
+  }
+  _nazMembersCache = sheetToObjects_(ss.getSheetByName(SHEETS.MEMBERS)).map(function (m) {
     return {
       name: String(m.name || '').trim(),
       email: String(m.email || '').trim().toLowerCase(),
@@ -41,6 +52,12 @@ function listMembers_() {
   }).filter(function (m) {
     return m.email || m.whatsapp;
   });
+  return _nazMembersCache;
+}
+
+function clearRosterCaches_() {
+  _nazRoleMapCache = null;
+  _nazMembersCache = null;
 }
 
 function getActiveUserEmail_() {
@@ -80,8 +97,7 @@ function isPersonalAdmin_(ctx) {
  */
 function requireAdminOperation_(allowFirstSetupOwner) {
   var ctx = requireKnownUser_();
-  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
-    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
+  var setupDone = ensureSetupFlagFromDb_();
   var owner = getScriptOwnerEmail_();
 
   if (!setupDone && allowFirstSetupOwner) {
@@ -150,9 +166,8 @@ function clearCachedSessionEmail_() {
 function isEmailOnRoster_(email) {
   email = String(email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') < 0) return false;
-  // Do not probe Drive here — deleted spreadsheet IDs hang the web app.
-  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
-    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
+  // Recover DB/setup flags if Clear session previously wiped Script Properties by mistake
+  var setupDone = ensureSetupFlagFromDb_();
   if (!setupDone) {
     var owner = getScriptOwnerEmail_();
     return !!(owner && owner === email);
@@ -163,6 +178,38 @@ function isEmailOnRoster_(email) {
     if (roleMap[role] && roleMap[role].email === email) return true;
   }
   return listMembers_().some(function (m) { return m.email === email; });
+}
+
+/**
+ * If SETUP_DONE was cleared but NAZ Workflow DB still exists on Drive, re-link it
+ * so members can log in again without recreating Setup.
+ */
+function ensureSetupFlagFromDb_() {
+  var props = getScriptProps_();
+  if (props.getProperty(PROP.SETUP_DONE) === '1' && props.getProperty(PROP.DB_SPREADSHEET_ID)) {
+    return true;
+  }
+  var ss = null;
+  try {
+    ss = findExistingDbSpreadsheet_();
+  } catch (eFind) {
+    ss = null;
+  }
+  if (!ss) return false;
+  try {
+    var sheet = ss.getSheetByName(SHEETS.ROLES);
+    if (!sheet) return false;
+    var rows = sheetToObjects_(sheet);
+    var hasRole = rows.some(function (r) {
+      return String(r.email || '').trim();
+    });
+    if (!hasRole) return false;
+    props.setProperty(PROP.DB_SPREADSHEET_ID, ss.getId());
+    props.setProperty(PROP.SETUP_DONE, '1');
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
@@ -240,8 +287,7 @@ function verifyLoginCode_(email, code) {
 
 function getUserContext_() {
   var email = getActiveUserEmail_();
-  var setupDone = getScriptProps_().getProperty(PROP.SETUP_DONE) === '1' &&
-    !!getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID);
+  var setupDone = ensureSetupFlagFromDb_();
 
   // Pre-setup / wiped DB: never touch Sheets/Drive
   if (!setupDone) {

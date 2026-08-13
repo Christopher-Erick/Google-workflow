@@ -23,6 +23,7 @@ function runInitialSetup() {
 
 function saveRoles_(payload) {
   var ctx = requireAdminOperation_(true);
+  clearRosterCaches_();
 
   // Update existing DB only — never recreate on user/role changes
   ensureDb_({ allowCreate: false });
@@ -249,6 +250,7 @@ function getSetupState_() {
     rootFolderId: getScriptProps_().getProperty(PROP.ROOT_FOLDER_ID) || '',
     dbSpreadsheetId: getScriptProps_().getProperty(PROP.DB_SPREADSHEET_ID) || '',
     webAppUrl: webAppUrl,
+    lastMailStatus: getLastMailStatus_(),
     accountChooserUrl: webAppUrl
       ? 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(webAppUrl)
       : '',

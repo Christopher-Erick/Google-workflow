@@ -103,9 +103,13 @@ function apiLogoutSession() {
   });
 }
 
-/** Fast — clears stale Drive/DB pointers after a manual wipe (no Drive I/O). */
+/** Fast — clears stale Drive/DB pointers after a manual wipe (no Drive I/O). Admin only. */
 function apiResetStaleLinks() {
   return withError_(function () {
+    var ctx = requireKnownUser_();
+    if (!ctx.isAdmin && getScriptProps_().getProperty(PROP.SETUP_DONE) === '1') {
+      throw new Error('Only Admin can reset Drive links. Use Clear session / Switch account to sign out.');
+    }
     clearCachedSessionEmail_();
     var props = getScriptProps_();
     props.deleteProperty(PROP.DB_SPREADSHEET_ID);
@@ -160,7 +164,8 @@ function buildBootstrapPayload_(opt) {
 function apiGetBootstrap() {
   return withError_(function () {
     requireKnownUser_();
-    return buildBootstrapPayload_({});
+    // Skip items here — client loads them via apiListItems (keeps login fast)
+    return buildBootstrapPayload_({ skipItems: true });
   });
 }
 
@@ -246,6 +251,12 @@ function apiSaveWebAppUrl(url) {
   return withError_(function () {
     getScriptProps_().setProperty(PROP.WEB_APP_URL, String(url || '').trim());
     return { ok: true, webAppUrl: getWebAppUrl_() };
+  });
+}
+
+function apiSendTestMail(toEmail) {
+  return withError_(function () {
+    return sendTestNotificationMail_(toEmail);
   });
 }
 

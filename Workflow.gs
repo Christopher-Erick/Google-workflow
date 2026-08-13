@@ -103,7 +103,11 @@ function submitItem_(payload) {
   }
 
   audit_(id, 'submitted', ctx.email, { type: typeKey, title: title, autoApproved: stage.autoApproved });
-  notifySubmitted_(item, ctx);
+  try {
+    notifySubmitted_(item, ctx);
+  } catch (eNotify) {
+    console.error('notifySubmitted_ failed: ' + (eNotify.message || eNotify));
+  }
   return enrichItem_(findById_(SHEETS.ITEMS, id), ctx);
 }
 
@@ -112,6 +116,9 @@ function approveItem_(itemId, note) {
   var ctx = requireKnownUser_();
   var item = findById_(SHEETS.ITEMS, itemId);
   if (!item) throw new Error('Item not found.');
+  try {
+    item = healPendingItemFromHistory_(item) || item;
+  } catch (eHeal) {}
   if (item.status !== ITEM_STATUS.PENDING) throw new Error('Item is not pending.');
 
   var isStageHolder = !!(item.current_stage_role && ctx.roles.indexOf(item.current_stage_role) >= 0);
@@ -170,7 +177,11 @@ function declineItem_(itemId, note) {
   updateRowById_(SHEETS.ITEMS, item.id, patch);
   var updated = findById_(SHEETS.ITEMS, item.id);
   audit_(item.id, 'declined', ctx.email, { note: note, actorName: actorName });
-  notifyStageUpdate_(updated, ctx.email, 'declined');
+  try {
+    notifyStageUpdate_(updated, ctx.email, 'declined');
+  } catch (eMail) {
+    console.error('notify declined failed: ' + (eMail.message || eMail));
+  }
   return enrichItem_(updated, ctx);
 }
 
@@ -179,7 +190,8 @@ function advanceApproval_(item, actorEmail, note, isForce, actingCtx) {
   var roleMap = getRoleMap_();
   var now = nowIso_();
   var idx = Number(item.current_stage_index);
-  var stageRole = item.current_stage_role || def.stages[idx];
+  if (!isFinite(idx) || idx < 0) idx = 0;
+  var stageRole = item.current_stage_role || def.stages[idx] || '';
 
   var recordedEmail = actorEmail;
   var recordedName = displayNameForEmail_(actorEmail, roleMap);
@@ -197,6 +209,25 @@ function advanceApproval_(item, actorEmail, note, isForce, actingCtx) {
       recordedName + ' (' + (ROLE_LABELS[stageRole] || stageRole) + ')';
   }
 
+  var nextIdx = idx + 1;
+  var isFinal = nextIdx >= def.stages.length;
+  var patch = {
+    updated_at: now,
+    last_action_at: now
+  };
+  if (isFinal) {
+    patch.status = ITEM_STATUS.APPROVED;
+    patch.current_stage_index = def.stages.length;
+    patch.current_stage_role = '';
+  } else {
+    patch.current_stage_index = nextIdx;
+    patch.current_stage_role = def.stages[nextIdx];
+  }
+
+  // Sheet is source of truth — update before Drive/mail so a move/mail failure
+  // cannot leave Approvals ahead of Items (stuck "waiting on" UI).
+  updateRowById_(SHEETS.ITEMS, item.id, patch);
+
   appendRow_(SHEETS.APPROVALS, {
     id: newId_('apr'),
     item_id: item.id,
@@ -209,39 +240,124 @@ function advanceApproval_(item, actorEmail, note, isForce, actingCtx) {
     timestamp: now
   });
 
-  var nextIdx = idx + 1;
-  if (nextIdx >= def.stages.length) {
-    var folderId = moveFileToPath_(item.file_id, def.folderApproved);
-    updateRowById_(SHEETS.ITEMS, item.id, {
-      status: ITEM_STATUS.APPROVED,
-      current_stage_index: def.stages.length,
-      current_stage_role: '',
-      folder_id: folderId,
-      updated_at: now,
-      last_action_at: now
-    });
+  if (isFinal) {
+    try {
+      var folderId = moveFileToPath_(item.file_id, def.folderApproved);
+      updateRowById_(SHEETS.ITEMS, item.id, { folder_id: folderId });
+    } catch (eMove) {
+      console.error('advanceApproval_ move failed for ' + item.id + ': ' + (eMove.message || eMove));
+      try {
+        audit_(item.id, 'approved_move_failed', recordedEmail, { error: String(eMove.message || eMove) });
+      } catch (eAudMove) {}
+    }
+    try {
+      audit_(item.id, isForce ? 'force_approved_final' : 'approved_final', recordedEmail, {
+        actorName: recordedName,
+        forceBy: isForce ? ((actingCtx && actingCtx.email) || '') : ''
+      });
+    } catch (eAud) {}
     var done = findById_(SHEETS.ITEMS, item.id);
-    audit_(item.id, isForce ? 'force_approved_final' : 'approved_final', recordedEmail, {
-      actorName: recordedName,
-      forceBy: isForce ? ((actingCtx && actingCtx.email) || '') : ''
-    });
-    notifyStageUpdate_(done, recordedEmail, 'approved_final');
+    try {
+      notifyStageUpdate_(done, recordedEmail, 'approved_final');
+    } catch (eMail) {
+      console.error('notify approved_final failed: ' + (eMail.message || eMail));
+    }
     return enrichItem_(done, getUserContext_());
   }
 
-  updateRowById_(SHEETS.ITEMS, item.id, {
-    current_stage_index: nextIdx,
-    current_stage_role: def.stages[nextIdx],
-    updated_at: now,
-    last_action_at: now
-  });
+  try {
+    audit_(item.id, isForce ? 'force_approved_stage' : 'approved_stage', recordedEmail, {
+      next: def.stages[nextIdx],
+      actorName: recordedName
+    });
+  } catch (eAud2) {}
   var updated = findById_(SHEETS.ITEMS, item.id);
-  audit_(item.id, isForce ? 'force_approved_stage' : 'approved_stage', recordedEmail, {
-    next: def.stages[nextIdx],
-    actorName: recordedName
-  });
-  notifyStageUpdate_(updated, recordedEmail, 'approved_stage');
+  try {
+    notifyStageUpdate_(updated, recordedEmail, 'approved_stage');
+  } catch (eMail2) {
+    console.error('notify approved_stage failed: ' + (eMail2.message || eMail2));
+  }
   return enrichItem_(updated, getUserContext_());
+}
+
+/**
+ * If Approvals history is ahead of Items (e.g. old bug: approval logged then move/mail threw),
+ * advance or complete the item so the dashboard matches history.
+ */
+function healPendingItemFromHistory_(item) {
+  if (!item || String(item.status) !== ITEM_STATUS.PENDING) return item;
+  var def = getDocType_(item.type);
+  if (!def || !def.stages || !def.stages.length) return item;
+
+  var approvals = listApprovalsForItem_(item.id);
+  var approvedIdx = {};
+  var declined = false;
+  approvals.forEach(function (a) {
+    var action = String(a.action || '');
+    if (action === 'declined') declined = true;
+    if (
+      action === 'approved' ||
+      action === 'force_approved' ||
+      action === 'auto_approved_on_submit' ||
+      action.indexOf('approved') === 0
+    ) {
+      var si = Number(a.stage_index);
+      if (isFinite(si) && si >= 0) approvedIdx[si] = true;
+    }
+  });
+  if (declined) return item;
+
+  var maxDone = -1;
+  for (var i = 0; i < def.stages.length; i++) {
+    if (approvedIdx[i]) maxDone = i;
+    else break; // require contiguous stages from the start
+  }
+  if (maxDone < 0) return item;
+
+  var cur = Number(item.current_stage_index);
+  if (!isFinite(cur) || cur < 0) cur = 0;
+  var targetIdx = maxDone + 1;
+  var now = nowIso_();
+
+  if (targetIdx >= def.stages.length) {
+    if (String(item.status) === ITEM_STATUS.APPROVED && cur >= def.stages.length) return item;
+    var patchDone = {
+      status: ITEM_STATUS.APPROVED,
+      current_stage_index: def.stages.length,
+      current_stage_role: '',
+      updated_at: now,
+      last_action_at: now
+    };
+    try {
+      var folderId = moveFileToPath_(item.file_id, def.folderApproved);
+      patchDone.folder_id = folderId;
+    } catch (eMove) {
+      console.error('heal move failed for ' + item.id + ': ' + (eMove.message || eMove));
+    }
+    updateRowById_(SHEETS.ITEMS, item.id, patchDone);
+    try {
+      audit_(item.id, 'healed_approved_from_history', '', { maxDone: maxDone });
+    } catch (eA) {}
+    var healedDone = findById_(SHEETS.ITEMS, item.id);
+    try {
+      notifyStageUpdate_(healedDone, item.submitter_email || '', 'approved_final');
+    } catch (eN) {}
+    return healedDone;
+  }
+
+  if (targetIdx > cur || String(item.current_stage_role) !== String(def.stages[targetIdx])) {
+    updateRowById_(SHEETS.ITEMS, item.id, {
+      current_stage_index: targetIdx,
+      current_stage_role: def.stages[targetIdx],
+      updated_at: now,
+      last_action_at: now
+    });
+    try {
+      audit_(item.id, 'healed_stage_from_history', '', { to: def.stages[targetIdx], maxDone: maxDone });
+    } catch (eA2) {}
+    return findById_(SHEETS.ITEMS, item.id);
+  }
+  return item;
 }
 
 function adminForceApprove_(itemId, note) {
@@ -250,6 +366,9 @@ function adminForceApprove_(itemId, note) {
   if (!ctx.isAdmin) throw new Error('Admin only.');
   var item = findById_(SHEETS.ITEMS, itemId);
   if (!item) throw new Error('Item not found.');
+  try {
+    item = healPendingItemFromHistory_(item) || item;
+  } catch (eHeal) {}
   if (item.status !== ITEM_STATUS.PENDING) throw new Error('Item is not pending.');
   return advanceApproval_(item, ctx.email, note || '', true, ctx);
 }
@@ -499,11 +618,13 @@ function reopenItem_(itemId) {
   return enrichItem_(updated, ctx);
 }
 
-function enrichItem_(item, ctx) {
+function enrichItem_(item, ctx, opt) {
   if (!item) return null;
+  opt = opt || {};
   var def = getDocType_(item.type);
-  var roleMap = getRoleMap_();
-  var approvals = listApprovalsForItem_(item.id).map(function (a) {
+  var roleMap = opt.roleMap || getRoleMap_();
+  var rawApprovals = opt.approvals || listApprovalsForItem_(item.id);
+  var approvals = rawApprovals.map(function (a) {
     var name = String(a.actor_name || '').trim() || displayNameForEmail_(a.actor_email, roleMap);
     return {
       id: a.id,
@@ -571,6 +692,7 @@ function enrichItem_(item, ctx) {
 function listEnrichedItems_(filter) {
   var ctx = requireKnownUser_();
   requireSetup_();
+  var roleMap = getRoleMap_();
   var items = listItems_();
   if (filter && filter.type) {
     items = items.filter(function (i) { return i.type === filter.type; });
@@ -587,5 +709,22 @@ function listEnrichedItems_(filter) {
   items.sort(function (a, b) {
     return String(b.created_at).localeCompare(String(a.created_at));
   });
-  return items.map(function (i) { return enrichItem_(i, ctx); });
+
+  // One Approvals sheet read for the whole list (was N reads + heal/Drive — very slow)
+  var approvalsByItem = {};
+  try {
+    sheetToObjects_(getDb_().getSheetByName(SHEETS.APPROVALS)).forEach(function (a) {
+      var id = String(a.item_id || '');
+      if (!id) return;
+      if (!approvalsByItem[id]) approvalsByItem[id] = [];
+      approvalsByItem[id].push(a);
+    });
+  } catch (eApr) {}
+
+  return items.map(function (i) {
+    return enrichItem_(i, ctx, {
+      roleMap: roleMap,
+      approvals: approvalsByItem[String(i.id)] || []
+    });
+  });
 }
