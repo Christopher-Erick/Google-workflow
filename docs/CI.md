@@ -86,7 +86,7 @@ When it finishes green, refresh the Web app URL — your latest code should be l
 npm install --global @google/clasp@2.4.2
 clasp login
 # create .clasp.json locally (gitignored) with your scriptId:
-# { "scriptId": "YOUR_SCRIPT_ID", "rootDir": "." }
+# { "scriptId": "YOUR_SCRIPT_ID", "rootDir": "src" }
 clasp push --force
 clasp deploy -i YOUR_DEPLOYMENT_ID -d "manual"
 ```

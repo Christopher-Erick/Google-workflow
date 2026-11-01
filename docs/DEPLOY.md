@@ -29,25 +29,25 @@ Personal Gmail users (Chair, Patron, etc.) only open the web link and approve. Y
 
 | Apps Script file | Repository file |
 |------------------|-----------------|
-| `Code.gs` | `Code.gs` |
-| `Config.gs` | `Config.gs` |
-| `SheetService.gs` | `SheetService.gs` |
-| `DriveService.gs` | `DriveService.gs` |
-| `Auth.gs` | `Auth.gs` |
-| `Notifications.gs` | `Notifications.gs` |
-| `Workflow.gs` | `Workflow.gs` |
-| `Setup.gs` | `Setup.gs` |
-| `Triggers.gs` | `Triggers.gs` |
+| `src/Code.gs` | `Code.gs` |
+| `src/Config.gs` | `Config.gs` |
+| `src/SheetService.gs` | `SheetService.gs` |
+| `src/DriveService.gs` | `DriveService.gs` |
+| `src/Auth.gs` | `Auth.gs` |
+| `src/Notifications.gs` | `Notifications.gs` |
+| `src/Workflow.gs` | `Workflow.gs` |
+| `src/Setup.gs` | `Setup.gs` |
+| `src/Triggers.gs` | `Triggers.gs` |
 
 4. Add HTML files (**File → HTML**). Names must match exactly (no `.html` in the Apps Script file name):
 
 | Apps Script HTML | Repository file |
 |------------------|-----------------|
-| `Index` | `Index.html` |
-| `Styles` | `Styles.html` |
-| `JavaScript` | `JavaScript.html` |
+| `Index` | `src/Index.html` |
+| `Styles` | `src/Styles.html` |
+| `JavaScript` | `src/JavaScript.html` |
 
-5. Enable **Project Settings → Show "appsscript.json" manifest** and align with repository `appsscript.json` (timezone, webapp, oauthScopes).
+5. Enable **Project Settings → Show "appsscript.json" manifest** and align with repository `src/appsscript.json` (timezone, webapp, oauthScopes).
 
 ---
 

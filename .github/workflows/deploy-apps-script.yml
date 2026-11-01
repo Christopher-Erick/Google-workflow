@@ -47,7 +47,7 @@ jobs:
             echo "Missing secret CLASP_SCRIPT_ID. See docs/CI.md"
             exit 1
           fi
-          printf '%s\n' "{\"scriptId\":\"${CLASP_SCRIPT_ID}\",\"rootDir\":\".\"}" > .clasp.json
+          printf '%s\n' "{\"scriptId\":\"${CLASP_SCRIPT_ID}\",\"rootDir\":\"src\"}" > .clasp.json
 
       - name: Push sources to Apps Script
         run: |

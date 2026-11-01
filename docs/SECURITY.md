@@ -26,7 +26,7 @@ Anonymous access would break identity checks and must not be used.
 
 ## OAuth scopes
 
-Declared in `appsscript.json`:
+Declared in `src/appsscript.json`:
 
 - Drive (create/move files and folders)
 - Spreadsheets (workflow DB)

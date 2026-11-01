@@ -7,7 +7,7 @@ This repository is maintained for the Nazarene SHE document workflow.
 - Treat this as production organisational software: clear commits, documented behaviour, no secrets in git.
 - Prefer small, reviewable changes over large mixed commits.
 - Update `CHANGELOG.md` for user-visible behaviour changes.
-- Keep approval rules in `Config.gs` (`DOC_TYPES`) as the single source of truth; update docs when chains change.
+- Keep approval rules in `src/Config.gs` (`DOC_TYPES`) as the single source of truth; update docs when chains change.
 - Do not commit `.clasp.json`, credentials, personal emails used in production, or API keys.
 
 ## Branching
@@ -27,7 +27,7 @@ Include:
 
 - Apps Script: `var` + ES5-friendly patterns in `.gs` (V8 runtime is enabled; avoid optional chaining in shared paths if unsure)
 - Private helpers end with `_`
-- Client API functions are `api*` in `Code.gs` and return `{ ok, data }` or `{ ok: false, error }`
+- Client API functions are `api*` in `src/Code.gs` and return `{ ok, data }` or `{ ok: false, error }`
 - HTML/CSS/JS stay in `Index.html`, `Styles.html`, `JavaScript.html`
 
 ## Security

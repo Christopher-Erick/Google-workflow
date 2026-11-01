@@ -43,24 +43,25 @@ If the submitter holds the first-stage role, that stage is **auto-approved** on 
 ├── LICENSE
 ├── CONTRIBUTING.md
 ├── SETUP.md                  # Quick pointer → full deploy guide
-├── appsscript.json           # Apps Script manifest & OAuth scopes
 ├── .clasp.json.example       # Optional clasp binding
 ├── .editorconfig
 ├── .gitignore
 │
-├── Code.gs                   # Web entry (doGet) + client API
-├── Config.gs                 # Constants, roles, doc-type definitions
-├── Auth.gs                   # Identity & permissions
-├── SheetService.gs           # Spreadsheet database
-├── DriveService.gs           # Folders, naming, decline notes
-├── Workflow.gs               # Submit / approve / decline / reopen / admin
-├── Notifications.gs          # Email (+ reminder helpers)
-├── Setup.gs                  # First-run roles & infrastructure
-├── Triggers.gs               # dailyReminderJob
-│
-├── Index.html                # Web app shell
-├── Styles.html
-├── JavaScript.html
+├── src/                      # Everything clasp pushes to Apps Script
+│   ├── appsscript.json       # Apps Script manifest & OAuth scopes
+│   ├── Code.gs               # Web entry (doGet) + client API
+│   ├── Config.gs             # Constants, roles, doc-type definitions
+│   ├── Auth.gs               # Identity & permissions
+│   ├── SheetService.gs       # Spreadsheet database
+│   ├── DriveService.gs       # Folders, naming, decline notes
+│   ├── Workflow.gs           # Submit / approve / decline / reopen / admin
+│   ├── Notifications.gs      # Email (+ reminder helpers)
+│   ├── Setup.gs              # First-run roles & infrastructure
+│   ├── Triggers.gs           # dailyReminderJob
+│   ├── DefaultLogo.gs
+│   ├── Index.html            # Web app shell
+│   ├── Styles.html
+│   └── JavaScript.html
 │
 └── docs/
     ├── ARCHITECTURE.md       # Design & data model
