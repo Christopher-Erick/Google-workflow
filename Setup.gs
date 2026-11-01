@@ -204,7 +204,7 @@ function getBrandingLight_() {
     orgName: ORG_NAME,
     slogan: slogan,
     logoDataUrl: '',
-    logoFileId: ''
+    logoFileId: getScriptProps_().getProperty(PROP.LOGO_FILE_ID) || ''
   };
 }
 

@@ -74,6 +74,16 @@ function apiGetPublicConfig() {
   });
 }
 
+/** Loads the saved logo as a data URL (Drive files cannot display inside the web-app iframe). */
+function apiGetLogo() {
+  return withError_(function () {
+    return {
+      logoDataUrl: getLogoDataUrl_(),
+      logoFileId: getScriptProps_().getProperty(PROP.LOGO_FILE_ID) || ''
+    };
+  });
+}
+
 function apiRequestLoginCode(email) {
   return withError_(function () {
     return requestLoginCode_(email);

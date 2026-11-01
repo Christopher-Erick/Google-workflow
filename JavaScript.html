@@ -4,7 +4,8 @@
     items: [],
     selected: null,
     noteMode: null,
-    pendingLogo: null
+    pendingLogo: null,
+    logoLoading: false
   };
 
   function $(id) { return document.getElementById(id); }
@@ -97,10 +98,29 @@
       $('brandLogo').alt = branding.orgName || 'Nazarene for She';
       $('brandLogo').hidden = false;
       $('brandMark').hidden = true;
-    } else {
+    } else if (!$('brandLogo').src || $('brandLogo').hidden) {
       $('brandLogo').hidden = true;
       $('brandMark').hidden = false;
+      loadSavedLogo();
     }
+  }
+
+  function loadSavedLogo() {
+    if (state.logoLoading) return;
+    state.logoLoading = true;
+    run('apiGetLogo')
+      .then(function (res) {
+        state.logoLoading = false;
+        if (res && res.logoDataUrl) {
+          $('brandLogo').src = res.logoDataUrl;
+          $('brandLogo').alt = $('brandTitle').textContent || 'Nazarene for She';
+          $('brandLogo').hidden = false;
+          $('brandMark').hidden = true;
+        }
+      })
+      .catch(function () {
+        state.logoLoading = false;
+      });
   }
 
   function showAuthBanner(message, chooserUrl) {
@@ -556,6 +576,7 @@
     run('apiGetPublicConfig')
       .then(function (pub) {
         if (pub && pub.branding) applyBranding(pub.branding);
+        loadSavedLogo();
         if (pub && pub.accountChooserUrl && $('accountChooserLink')) {
           $('accountChooserLink').href = pub.accountChooserUrl;
         }
