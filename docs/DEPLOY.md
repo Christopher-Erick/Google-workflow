@@ -29,15 +29,15 @@ Personal Gmail users (Chair, Patron, etc.) only open the web link and approve. Y
 
 | Apps Script file | Repository file |
 |------------------|-----------------|
-| `src/Code.gs` | `Code.gs` |
-| `src/Config.gs` | `Config.gs` |
-| `src/SheetService.gs` | `SheetService.gs` |
-| `src/DriveService.gs` | `DriveService.gs` |
-| `src/Auth.gs` | `Auth.gs` |
-| `src/Notifications.gs` | `Notifications.gs` |
-| `src/Workflow.gs` | `Workflow.gs` |
-| `src/Setup.gs` | `Setup.gs` |
-| `src/Triggers.gs` | `Triggers.gs` |
+| `Code.gs` | `src/Code.gs` |
+| `Config.gs` | `src/Config.gs` |
+| `SheetService.gs` | `src/SheetService.gs` |
+| `DriveService.gs` | `src/DriveService.gs` |
+| `Auth.gs` | `src/Auth.gs` |
+| `Notifications.gs` | `src/Notifications.gs` |
+| `Workflow.gs` | `src/Workflow.gs` |
+| `Setup.gs` | `src/Setup.gs` |
+| `Triggers.gs` | `src/Triggers.gs` |
 
 4. Add HTML files (**File → HTML**). Names must match exactly (no `.html` in the Apps Script file name):
 
