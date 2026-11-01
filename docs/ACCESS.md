@@ -16,7 +16,7 @@ Create **two Chrome profiles** (or Brave profiles):
 
 In each profile, bookmark only:
 
-`https://script.google.com/macros/s/AKfycbyADy_1Hwe2qb6FwGtcc5bOkMvvvp5HxNxeDW7OIp88SG0lrF3Ou5_MGRUGnTJ5TDyL/exec`
+`https://script.google.com/macros/s/AKfycbz9lQgBtWBMaa6eJXIwhlqTOyRppxKHUpMZowWLPGRQqEn2s_MNWoWU63NRf1jzaQWg/exec`
 
 One account per profile = no `/u/N/` bug.
 
